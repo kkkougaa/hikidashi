@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {clip, logoUrl, parseReader, tidyTitle, youtubeId} from './pageInfo';
+import {clip, logoUrl, parseFxTweet, parseReader, tidyTitle, xStatusId, youtubeId} from './pageInfo';
 
 describe('링크 정보 정리', () => {
   it('유튜브 주소에서 영상 id 를 찾는다', () => {
@@ -60,5 +60,29 @@ describe('링크 정보 정리', () => {
     expect(info.description).toBe('우리는 좋은 글이 가지는 힘을 믿습니다. 좋은 글은 수많은 사람들에게 영향을 미칩니다.');
     const own = parseReader({title: 'a', description: '사이트가 적어 둔 소개문입니다'}, 'https://ex.com/a');
     expect(own.description).toBe('사이트가 적어 둔 소개문입니다');
+  });
+
+  it('X 게시물 주소에서 id 를 찾는다', () => {
+    expect(xStatusId('https://x.com/elonmusk/status/1585341984679469056')).toBe('1585341984679469056');
+    expect(xStatusId('https://twitter.com/NASA/status/1857000000000000000?s=20')).toBe('1857000000000000000');
+    expect(xStatusId('https://mobile.twitter.com/i/web/status/123456789')).toBe('123456789');
+    expect(xStatusId('https://x.com/elonmusk')).toBeNull();
+    expect(xStatusId('https://example.com/a/status/123456')).toBeNull();
+  });
+
+  it('X 게시물은 글·사진·작성자를 쓴다', () => {
+    const withPhoto = parseFxTweet({
+      text: '오늘 찍은 사진\n두 번째 줄 https://t.co/abc123',
+      author: {name: '홍길동', screen_name: 'hong', avatar_url: 'https://pbs.twimg.com/profile_images/1/a_normal.jpg'},
+      media: {photos: [{url: 'https://pbs.twimg.com/media/photo.jpg'}]},
+    });
+    expect(withPhoto).toEqual({title: '오늘 찍은 사진', description: '오늘 찍은 사진\n두 번째 줄', image: 'https://pbs.twimg.com/media/photo.jpg', siteName: 'X · @hong'});
+    const video = parseFxTweet({text: '영상', author: {screen_name: 'a'}, media: {videos: [{thumbnail_url: 'https://pbs.twimg.com/thumb.jpg'}]}});
+    expect(video.image).toBe('https://pbs.twimg.com/thumb.jpg');
+    // 사진이 없으면 작성자 프로필 사진
+    const noMedia = parseFxTweet({text: '글만', author: {name: 'A', screen_name: 'a', avatar_url: 'https://pbs.twimg.com/profile_images/1/a_normal.jpg'}});
+    expect(noMedia.image).toBe('https://pbs.twimg.com/profile_images/1/a_200x200.jpg');
+    expect(noMedia.description).toBeUndefined();
+    expect(parseFxTweet({text: '', author: {name: 'A'}}).title).toBe('A의 게시물');
   });
 });

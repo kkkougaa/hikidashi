@@ -21,8 +21,9 @@
 이 앱에는 서버가 없어서 링크 정보는 아래 무료 서비스를 거친다. 데이터는 여전히 폰에만 저장된다.
 
 - 페이지 제목·소개문·이미지: [Jina Reader](https://jina.ai/reader) (`r.jina.ai`). 키 없이 쓰므로 요청 수 제한이 있다. 실패하면 직접 적으면 된다.
+- X(트위터) 게시물: [FxTwitter](https://github.com/FixTweet/FxTwitter) 공개 API (`api.fxtwitter.com`). X 는 로그인 없이 글을 읽을 수 없어서 따로 쓴다. 실패하면 Jina Reader 로 다시 시도.
 - 사이트 로고: Google 파비콘 서비스 (`www.google.com/s2/favicons`)
-- 저장한 링크 주소가 이 두 곳으로 전달된다.
+- 저장한 링크 주소가 이 서비스들로 전달된다.
 
 ## 개발
 

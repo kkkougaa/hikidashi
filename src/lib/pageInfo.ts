@@ -118,7 +118,70 @@ export function parseReader(data: ReaderData, url: string): PageInfo {
   };
 }
 
+/** X(트위터) 게시물 주소면 게시물 id */
+export function xStatusId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.replace(/^(www|mobile|m)\./, '');
+    if (!['x.com', 'twitter.com', 'fxtwitter.com', 'vxtwitter.com', 'fixupx.com', 'fixvx.com'].includes(h)) return null;
+    const m = u.pathname.match(/\/status(?:es)?\/(\d{5,25})/);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+interface FxTweet {
+  text?: string;
+  author?: {name?: string; screen_name?: string; avatar_url?: string};
+  media?: {photos?: {url?: string}[]; videos?: {thumbnail_url?: string}[]; all?: {type?: string; url?: string; thumbnail_url?: string}[]};
+}
+
+/** FxTwitter 응답을 PageInfo 로 바꾼다 */
+export function parseFxTweet(t: FxTweet): PageInfo {
+  const text = (t.text ?? '').replace(/\s*https:\/\/t\.co\/\w+\s*$/g, '').trim();
+  const first = clean(text.split('\n').find(l => l.trim()) ?? '');
+  const name = clean(t.author?.name);
+  const handle = t.author?.screen_name;
+  const media = t.media ?? {};
+  const image = media.photos?.[0]?.url
+    || media.videos?.[0]?.thumbnail_url
+    || media.all?.find(m => m.thumbnail_url || m.type === 'photo')?.thumbnail_url
+    || media.all?.find(m => m.type === 'photo')?.url
+    || t.author?.avatar_url?.replace(/_normal\./, '_200x200.');
+  const title = first ? clip(first, 60) : name ? `${name}의 게시물` : undefined;
+  const body = text ? clip(text.replace(/\n{3,}/g, '\n\n'), 400) : '';
+  return {
+    title,
+    // 한 줄짜리 글이면 제목과 같으므로 내용은 비운다
+    description: body && body !== title ? body : undefined,
+    image: image || undefined,
+    siteName: handle ? `X · @${handle}` : 'X',
+  };
+}
+
+/** X 는 로그인 없이 글을 읽을 수 없어서 FxTwitter 공개 API 로 가져온다 */
+async function fetchX(id: string, signal?: AbortSignal): Promise<PageInfo | null> {
+  try {
+    const res = await fetch(`https://api.fxtwitter.com/status/${id}`, {signal});
+    if (!res.ok) return null;
+    const body = (await res.json()) as {tweet?: FxTweet | null};
+    return body.tweet ? parseFxTweet(body.tweet) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchPageInfo(url: string, signal?: AbortSignal): Promise<PageInfo | null> {
+  const xid = xStatusId(url);
+  if (xid) {
+    const info = await fetchX(xid, signal);
+    if (info || signal?.aborted) return info;
+  }
+  return fetchReader(url, signal);
+}
+
+async function fetchReader(url: string, signal?: AbortSignal): Promise<PageInfo | null> {
   // 오래된 브라우저에는 AbortSignal.any/timeout 이 없을 수 있다
   const timeout = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(15000) : undefined;
   const any = signal && timeout && typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, timeout]) : signal ?? timeout;
