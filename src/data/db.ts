@@ -1,17 +1,17 @@
 import {openDB, type DBSchema, type IDBPDatabase} from 'idb';
 import type {Folder, Item} from './types';
 
-interface SeorapDB extends DBSchema {
+interface HikidashiDB extends DBSchema {
   items: {key: string; value: Item};
   folders: {key: string; value: Folder};
   meta: {key: string; value: unknown};
 }
 
-const DB_NAME = 'seorap';
-let dbPromise: Promise<IDBPDatabase<SeorapDB>> | null = null;
+const DB_NAME = 'hikidashi';
+let dbPromise: Promise<IDBPDatabase<HikidashiDB>> | null = null;
 
 export function db() {
-  dbPromise ??= openDB<SeorapDB>(DB_NAME, 1, {
+  dbPromise ??= openDB<HikidashiDB>(DB_NAME, 1, {
     upgrade(d) {
       d.createObjectStore('items', {keyPath: 'id'});
       d.createObjectStore('folders', {keyPath: 'id'});

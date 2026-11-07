@@ -48,7 +48,7 @@ export interface Item extends Base {
 export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags'>;
 
 export interface Backup {
-  app: 'seorap';
+  app: 'hikidashi';
   version: 1;
   exportedAt: number;
   folders: Folder[];

@@ -2,7 +2,7 @@ import type {Backup, Folder, Item} from './types';
 import {COLORS} from './types';
 
 export function makeBackup(folders: Folder[], items: Item[], now = Date.now()): Backup {
-  return {app: 'seorap', version: 1, exportedAt: now, folders, items};
+  return {app: 'hikidashi', version: 1, exportedAt: now, folders, items};
 }
 
 export class BackupError extends Error {}
@@ -18,11 +18,11 @@ export function parseBackup(text: string): Backup {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new BackupError('백업 파일을 읽을 수 없어요. 서랍에서 내보낸 .json 파일인지 확인해주세요.');
+    throw new BackupError('백업 파일을 읽을 수 없어요. hikidashi에서 내보낸 .json 파일인지 확인해주세요.');
   }
   const b = raw as Partial<Backup>;
-  if (!b || b.app !== 'seorap' || b.version !== 1 || !Array.isArray(b.items) || !Array.isArray(b.folders)) {
-    throw new BackupError('서랍 백업 파일이 아니에요.');
+  if (!b || b.app !== 'hikidashi' || b.version !== 1 || !Array.isArray(b.items) || !Array.isArray(b.folders)) {
+    throw new BackupError('hikidashi 백업 파일이 아니에요.');
   }
   const folders = b.folders.filter((f): f is Folder => {
     const r = f as unknown as Record<string, unknown>;
@@ -33,7 +33,7 @@ export function parseBackup(text: string): Backup {
     return !!r && isBase(r) && (r.kind === 'link' || r.kind === 'memo') && isStr(r.title) && isStr(r.note)
       && (r.folderId === null || isStr(r.folderId)) && Array.isArray(r.tags) && typeof r.starred === 'boolean';
   });
-  return {app: 'seorap', version: 1, exportedAt: isNum(b.exportedAt) ? b.exportedAt : 0, folders, items};
+  return {app: 'hikidashi', version: 1, exportedAt: isNum(b.exportedAt) ? b.exportedAt : 0, folders, items};
 }
 
 /**

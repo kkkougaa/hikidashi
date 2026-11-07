@@ -49,7 +49,7 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
 
   const exportNow = async () => {
     const {items, folders} = records();
-    const name = `seorap-backup-${fileStamp()}.json`;
+    const name = `hikidashi-backup-${fileStamp()}.json`;
     const res = await saveFile(name, JSON.stringify(makeBackup(folders, items), null, 2));
     if (res === 'cancelled') return;
     const now = Date.now();

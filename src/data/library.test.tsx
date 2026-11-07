@@ -86,11 +86,11 @@ describe('서랍 데이터', () => {
     const mine = lib.items[0];
     let r = {items: 0, folders: 0};
     await act(async () => {
-      r = lib.importBackup({app: 'seorap', version: 1, exportedAt: 0, folders: [], items: [{...mine, title: '옛것', updatedAt: mine.updatedAt - 10}]});
+      r = lib.importBackup({app: 'hikidashi', version: 1, exportedAt: 0, folders: [], items: [{...mine, title: '옛것', updatedAt: mine.updatedAt - 10}]});
     });
     expect(r.items).toBe(0);
     await act(async () => {
-      r = lib.importBackup({app: 'seorap', version: 1, exportedAt: 0, folders: [], items: [{...mine, title: '새것', updatedAt: mine.updatedAt + 10}]});
+      r = lib.importBackup({app: 'hikidashi', version: 1, exportedAt: 0, folders: [], items: [{...mine, title: '새것', updatedAt: mine.updatedAt + 10}]});
     });
     expect(r.items).toBe(1);
     expect(lib.items.find(i => i.id === id)?.title).toBe('새것');

@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/apple-touch-icon.png', 'icons/favicon.svg'],
       manifest: {
-        name: '서랍',
-        short_name: '서랍',
+        name: 'hikidashi',
+        short_name: 'hikidashi',
         description: '링크와 메모를 모아두는 나만의 서랍',
         lang: 'ko',
         start_url: './',
@@ -26,7 +26,7 @@ export default defineConfig({
           {src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png'},
           {src: 'icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable'},
         ],
-        // 안드로이드 공유 메뉴에서 "서랍"으로 바로 보내기
+        // 안드로이드 공유 메뉴에서 "hikidashi"로 바로 보내기
         share_target: {action: './', method: 'GET', params: {title: 'title', text: 'text', url: 'url'}},
       },
       workbox: {

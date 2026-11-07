@@ -20,7 +20,7 @@ import {SettingsSheet} from './components/SettingsSheet';
 
 /** 보고 있는 범위: 전체, 즐겨찾기, 미분류, 특정 서랍, 특정 태그 */
 type Scope = {type: 'all'} | {type: 'star'} | {type: 'none'} | {type: 'folder'; id: string} | {type: 'tag'; tag: string};
-const VIEW_KEY = 'seorap-view';
+const VIEW_KEY = 'hikidashi-view';
 
 const dotIcon = (color: string) => {
   const Dot = () => <span className="nav-dot" aria-hidden="true"><span className="dot" style={cssVar(color)} /></span>;
@@ -175,7 +175,7 @@ export function App() {
         <button className="fab" aria-label="추가" onClick={openAdd}><Plus strokeWidth={2.4} /></button>
       </nav>
 
-      <MobileNav isOpen={navOpen} onOpenChange={setNavOpen} header="서랍" side="start">
+      <MobileNav isOpen={navOpen} onOpenChange={setNavOpen} header="hikidashi" side="start">
         <SideNavSection title="보관함">
           <SideNavItem label="전체" icon={Inbox} isSelected={scope.type === 'all'} onClick={() => pick({type: 'all'})} endContent={count(lib.items.length)} />
           <SideNavItem label="즐겨찾기" icon={Star} isSelected={scope.type === 'star'} onClick={() => pick({type: 'star'})} endContent={count(lib.items.filter(i => i.starred).length)} />
