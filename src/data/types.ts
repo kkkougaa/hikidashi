@@ -1,16 +1,28 @@
-/** 서랍 색. 흰 글자가 4.5:1 이상 나오는 진한 색만 쓴다. */
+/** 서랍 색. 흰 글자가 4.5:1 이상 나오는 진한 색만 쓴다 (17가지, 무지개 순). */
 export const COLORS = {
-  blue: '#1366E0',
-  cyan: '#007F96',
+  red: '#D02B2B',
   orange: '#B95300',
+  brown: '#8B5A2B',
+  mustard: '#8A6A00',
+  lime: '#4D7C0F',
   green: '#16804A',
-  magenta: '#C2185B',
+  forest: '#166534',
+  teal: '#0F766E',
+  cyan: '#007F96',
+  sky: '#0369A1',
+  blue: '#1366E0',
+  navy: '#1E3A8A',
   purple: '#6B3FD6',
+  plum: '#86198F',
+  magenta: '#C2185B',
   gray: '#5F646C',
+  charcoal: '#2F343B',
 } as const;
 export type ColorKey = keyof typeof COLORS;
 export const COLOR_NAMES: Record<ColorKey, string> = {
-  blue: '파랑', cyan: '청록', orange: '주황', green: '초록', magenta: '자홍', purple: '보라', gray: '회색',
+  red: '빨강', orange: '주황', brown: '갈색', mustard: '겨자', lime: '연두', green: '초록', forest: '숲초록',
+  teal: '청록', cyan: '하늘청록', sky: '하늘', blue: '파랑', navy: '남색', purple: '보라', plum: '자두',
+  magenta: '자홍', gray: '회색', charcoal: '먹색',
 };
 
 /**
