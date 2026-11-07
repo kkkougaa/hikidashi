@@ -137,7 +137,8 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
         if (fetchState !== 'loading') void load(u);
         return;
       }
-      onSave({...base, kind, url: u, title: base.title || guessTitle(u), image, siteName});
+      // 내용이 있으면 제목을 지어내지 않고 비워 둔다 (X 게시물 같은 경우)
+      onSave({...base, kind, url: u, title: base.title || (base.note ? '' : guessTitle(u)), image, siteName});
     } else {
       if (!base.note && !base.title) return setErr('메모 내용을 적어주세요');
       onSave({...base, kind, url: undefined, image: undefined, siteName: undefined});

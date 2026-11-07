@@ -140,7 +140,6 @@ interface FxTweet {
 /** FxTwitter 응답을 PageInfo 로 바꾼다 */
 export function parseFxTweet(t: FxTweet): PageInfo {
   const text = (t.text ?? '').replace(/\s*https:\/\/t\.co\/\w+\s*$/g, '').trim();
-  const first = clean(text.split('\n').find(l => l.trim()) ?? '');
   const name = clean(t.author?.name);
   const handle = t.author?.screen_name;
   const media = t.media ?? {};
@@ -149,12 +148,11 @@ export function parseFxTweet(t: FxTweet): PageInfo {
     || media.all?.find(m => m.thumbnail_url || m.type === 'photo')?.thumbnail_url
     || media.all?.find(m => m.type === 'photo')?.url
     || t.author?.avatar_url?.replace(/_normal\./, '_200x200.');
-  const title = first ? clip(first, 60) : name ? `${name}의 게시물` : undefined;
+  // 게시물은 제목이 따로 없으니 제목은 비우고 글 전체를 내용으로 쓴다
   const body = text ? clip(text.replace(/\n{3,}/g, '\n\n'), 400) : '';
   return {
-    title,
-    // 한 줄짜리 글이면 제목과 같으므로 내용은 비운다
-    description: body && body !== title ? body : undefined,
+    title: body ? undefined : name ? `${name}의 게시물` : undefined,
+    description: body || undefined,
     image: image || undefined,
     siteName: handle ? `X · @${handle}` : 'X',
   };

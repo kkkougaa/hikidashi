@@ -3,7 +3,7 @@ import {getMeta, loadAll, putFolders, putItems, setMeta} from './db';
 import {mergeRecords} from './backup';
 import type {Backup, ColorKey, Folder, Item, ItemDraft} from './types';
 
-const uid = () =>
+export const uid = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -11,8 +11,8 @@ const uid = () =>
 export function newFolder(name: string, color: ColorKey, order: number, now = Date.now()): Folder {
   return {id: uid(), name, color, order, createdAt: now, updatedAt: now, deletedAt: null};
 }
-export function newItem(d: ItemDraft, now = Date.now()): Item {
-  return {...d, id: uid(), starred: false, createdAt: now, updatedAt: now, deletedAt: null};
+export function newItem(d: ItemDraft, now = Date.now(), id = uid()): Item {
+  return {...d, id, starred: false, createdAt: now, updatedAt: now, deletedAt: null};
 }
 
 /** 처음 열었을 때 만들어 두는 서랍 */
@@ -29,7 +29,8 @@ export interface Library {
   /** 삭제 표시가 없는 것만 */
   items: Item[];
   folders: Folder[];
-  addItem: (d: ItemDraft) => Item;
+  /** id 를 넘기면 그 id 로 만든다 (애니메이션 안에서 추가해도 id 를 미리 알 수 있게) */
+  addItem: (d: ItemDraft, id?: string) => Item;
   updateItem: (id: string, patch: Partial<ItemDraft & {starred: boolean}>) => void;
   removeItem: (id: string) => void;
   restoreItem: (id: string) => void;
@@ -89,8 +90,8 @@ export function useLibrary(): Library {
   const find = (id: string) => itemsRef.current.find(i => i.id === id);
 
   const api = useMemo<Omit<Library, 'ready' | 'items' | 'folders'>>(() => ({
-    addItem: d => {
-      const it = newItem(d);
+    addItem: (d, id) => {
+      const it = newItem(d, Date.now(), id);
       writeItems([it]);
       return it;
     },

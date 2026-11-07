@@ -76,13 +76,14 @@ describe('링크 정보 정리', () => {
       author: {name: '홍길동', screen_name: 'hong', avatar_url: 'https://pbs.twimg.com/profile_images/1/a_normal.jpg'},
       media: {photos: [{url: 'https://pbs.twimg.com/media/photo.jpg'}]},
     });
-    expect(withPhoto).toEqual({title: '오늘 찍은 사진', description: '오늘 찍은 사진\n두 번째 줄', image: 'https://pbs.twimg.com/media/photo.jpg', siteName: 'X · @hong'});
+    expect(withPhoto).toEqual({title: undefined, description: '오늘 찍은 사진\n두 번째 줄', image: 'https://pbs.twimg.com/media/photo.jpg', siteName: 'X · @hong'});
     const video = parseFxTweet({text: '영상', author: {screen_name: 'a'}, media: {videos: [{thumbnail_url: 'https://pbs.twimg.com/thumb.jpg'}]}});
     expect(video.image).toBe('https://pbs.twimg.com/thumb.jpg');
     // 사진이 없으면 작성자 프로필 사진
     const noMedia = parseFxTweet({text: '글만', author: {name: 'A', screen_name: 'a', avatar_url: 'https://pbs.twimg.com/profile_images/1/a_normal.jpg'}});
     expect(noMedia.image).toBe('https://pbs.twimg.com/profile_images/1/a_200x200.jpg');
-    expect(noMedia.description).toBeUndefined();
+    expect(noMedia.title).toBeUndefined();
+    expect(noMedia.description).toBe('글만');
     expect(parseFxTweet({text: '', author: {name: 'A'}}).title).toBe('A의 게시물');
   });
 });

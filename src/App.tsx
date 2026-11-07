@@ -1,6 +1,6 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {flushSync} from 'react-dom';
-import {Hash, Inbox, LayoutGrid, Menu, Plus, Rows3, Search, Settings, SlidersHorizontal, Star, Tray} from './icons';
+import {Hash, Inbox, LayoutGrid, Menu, Rows3, Search, Settings, SlidersHorizontal, Star, Tray} from './icons';
 import {SegmentedControl, SegmentedControlItem} from '@astryxdesign/core/SegmentedControl';
 import {afterSheet, animate, haptic} from './lib/motion';
 import {MobileNav} from '@astryxdesign/core/MobileNav';
@@ -11,15 +11,17 @@ import {Button} from '@astryxdesign/core/Button';
 import {Spinner} from '@astryxdesign/core/Spinner';
 import {Text} from '@astryxdesign/core/Text';
 import {useToast} from '@astryxdesign/core/Toast';
-import {useLibrary} from './data/library';
+import {uid, useLibrary} from './data/library';
 import {COLORS, type Folder, type Item, type ItemDraft} from './data/types';
-import {domainOf, findUrl, normalizeUrl} from './lib/format';
+import {domainOf, findUrl, guessTitle, normalizeUrl} from './lib/format';
 import {cssVar} from './components/bits';
 import {CardGrid, DayList, type ItemActions} from './components/ItemViews';
 import {ItemSheet} from './components/ItemSheet';
 import {MemoSheet} from './components/MemoSheet';
 import {FoldersSheet} from './components/FoldersSheet';
 import {SettingsSheet} from './components/SettingsSheet';
+import {PullFab} from './components/PullFab';
+import {fetchPageInfo} from './lib/pageInfo';
 
 /** 보고 있는 범위: 전체, 즐겨찾기, 미분류, 특정 서랍, 특정 태그 */
 type Scope = {type: 'all'} | {type: 'star'} | {type: 'none'} | {type: 'folder'; id: string} | {type: 'tag'; tag: string};
@@ -121,6 +123,48 @@ export function App() {
   const changeView = (v: 'list' | 'card') => { if (v !== view) animate(() => setView(v)); };
   const openAdd = () => { setEditing(null); setPrefill(undefined); setSheet('item'); };
 
+  // 링크 정보를 가져오는 중인 항목 (목록에 작은 회전 표시)
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(() => new Set());
+  const setLoading = (id: string, on: boolean) => setLoadingIds(prev => {
+    const next = new Set(prev);
+    if (on) next.add(id); else next.delete(id);
+    return next;
+  });
+
+  /** + 버튼을 끌어올렸다 놓으면: 복사한 링크를 바로 추가하고 정보는 뒤이어 채운다 */
+  const quickAdd = () => {
+    // 손을 뗀 그 이벤트 안에서 바로 읽어야 iOS 가 허락한다
+    const reading = navigator.clipboard?.readText?.();
+    if (!reading) return notify('이 브라우저는 클립보드를 읽을 수 없어요. + 를 눌러 붙여넣어 주세요', 'error');
+    reading.then(async text => {
+      const u = normalizeUrl(text.trim()) ?? findUrl(text);
+      if (!u) return notify('복사한 링크가 없어요. 링크를 복사한 뒤 다시 해보세요');
+      const current = lib.allRecords().items.filter(i => !i.deletedAt);
+      if (current.some(i => i.url === u)) return notify('이미 저장한 링크예요');
+      toTop();
+      // 화면 전환 애니메이션은 추가를 한 박자 늦게 실행하므로 id 를 먼저 정해 둔다
+      const item = {id: uid()};
+      setLoading(item.id, true);
+      animate(() => lib.addItem({kind: 'link', url: u, title: '', note: '', folderId: defaultFolderId, tags: []}, item.id));
+      const dismiss = toast({
+        body: '복사한 링크를 추가했어요', uniqueID: 'undo', isAutoHide: false,
+        endContent: <Button label="되돌리기" variant="ghost" size="sm" onClick={() => { animate(() => lib.removeItem(item.id)); dismiss(); }} />,
+      });
+      const info = await fetchPageInfo(u);
+      setLoading(item.id, false);
+      const now = lib.allRecords().items.find(i => i.id === item.id);
+      if (!now || now.deletedAt) return;
+      // 그사이 사용자가 고친 칸은 건드리지 않는다
+      const patch: Partial<ItemDraft> = {};
+      if (info?.title && !now.title) patch.title = info.title;
+      if (info?.description && !now.note) patch.note = info.description;
+      if (info?.image && !now.image) patch.image = info.image;
+      if (info?.siteName && !now.siteName) patch.siteName = info.siteName;
+      if (!info && !now.title && !now.note) patch.title = guessTitle(u);
+      if (Object.keys(patch).length) animate(() => lib.updateItem(item.id, patch));
+    }, () => notify('클립보드를 읽지 못했어요. 붙여넣기를 허용하거나 + 를 눌러 추가해주세요', 'error'));
+  };
+
   const act: ItemActions = {
     open: i => setMemo(i),
     edit: i => { setMemo(null); setEditing(i); setPrefill(undefined); setSheet('item'); },
@@ -169,7 +213,7 @@ export function App() {
         : <EmptyState title={lib.items.length ? '이 서랍은 비어 있어요' : '서랍이 비어 있어요'} description="아래 + 버튼으로 링크나 메모를 넣어보세요." icon={<Tray size={28} />} actions={<Button label="추가" variant="primary" onClick={openAdd} />} />;
   } else {
     body = view === 'list'
-      ? <DayList items={list} folderMap={folderMap} showFolder={showFolder} act={act} />
+      ? <DayList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} />
       : <CardGrid items={list} folderMap={folderMap} showFolder={showFolder} act={act} />;
   }
 
@@ -203,7 +247,7 @@ export function App() {
         <button className="tab" aria-pressed={scope.type === 'star'} onClick={() => goto({type: 'star'})}><Star strokeWidth={1.8} /><span>즐겨찾기</span></button>
         <button className="tab" aria-pressed={searching} onClick={toggleSearch}><Search strokeWidth={1.8} /><span>검색</span></button>
         <button className="tab" aria-expanded={navOpen} onClick={() => setNavOpen(true)}><Tray strokeWidth={1.8} /><span>서랍</span></button>
-        <button className="fab" aria-label="추가" onClick={openAdd}><Plus strokeWidth={2.4} /></button>
+        <PullFab onTap={openAdd} onPull={quickAdd} />
       </nav>
 
       <MobileNav isOpen={navOpen} onOpenChange={setNavOpen} header="hikidashi" side="start">

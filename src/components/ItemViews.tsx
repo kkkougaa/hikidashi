@@ -3,6 +3,7 @@ import {ChevronRight, Copy, Pencil, Star, Trash2} from 'lucide-react';
 import {List, ListItem} from '@astryxdesign/core/List';
 import {ClickableCard} from '@astryxdesign/core/ClickableCard';
 import {ContextMenu} from '@astryxdesign/core/ContextMenu';
+import {Spinner} from '@astryxdesign/core/Spinner';
 import type {Folder, Item} from '../data/types';
 import {BUCKETS, bucketOf, domainOf, stamp} from '../lib/format';
 import {Block, Meta} from './bits';
@@ -18,7 +19,11 @@ export interface ItemActions {
 /** 항목마다 고유한 전환 이름: 지우거나 넣을 때 다른 줄이 제자리로 미끄러진다 */
 const vtName = (i: Item) => ({viewTransitionName: `it-${i.id.replace(/[^a-zA-Z0-9-]/g, '')}`}) as CSSProperties;
 
-const nameOf = (i: Item) => i.title || (i.kind === 'memo' ? '제목 없는 메모' : domainOf(i.url));
+const lines = (t: string) => t.split('\n').map(l => l.trim()).filter(Boolean);
+/** 제목이 없으면 내용 첫 줄을 제목 자리에 쓴다 (X 게시물처럼 제목이 따로 없는 글) */
+const nameOf = (i: Item) => i.title || lines(i.note)[0] || (i.kind === 'memo' ? '제목 없는 메모' : domainOf(i.url));
+/** 제목 아래 줄: 제목이 내용 첫 줄을 빌려 썼으면 그다음 줄부터 */
+const subOf = (i: Item) => (i.title ? lines(i.note) : lines(i.note).slice(1)).join(' ');
 
 function menuFor(i: Item, act: ItemActions) {
   return [
@@ -30,9 +35,9 @@ function menuFor(i: Item, act: ItemActions) {
   ];
 }
 
-function Row({item, folder, showFolder, act}: {item: Item; folder?: Folder; showFolder: boolean; act: ItemActions}) {
+function Row({item, folder, showFolder, act, loading}: {item: Item; folder?: Folder; showFolder: boolean; act: ItemActions; loading?: boolean}) {
   // 링크의 사이트는 출처 칩에 나오므로 여기엔 내용만
-  const sub = item.kind === 'memo' ? item.note.split('\n').find(l => l.trim()) ?? '' : item.note.split('\n')[0] ?? '';
+  const sub = subOf(item);
   return (
     <div className="vt-row" style={vtName(item)}>
     <ContextMenu items={menuFor(item, act)} presentation="adaptive" label={nameOf(item)} menuWidth={190}>
@@ -42,6 +47,7 @@ function Row({item, folder, showFolder, act}: {item: Item; folder?: Folder; show
         startContent={<Block item={item} folder={folder} />}
         endContent={
           <span className="row-end">
+            {loading && <Spinner size="sm" aria-label="링크 정보를 가져오는 중" />}
             {item.starred && <Star className="star" size={15} fill="currentColor" aria-label="즐겨찾기" />}
             <span className="num">{stamp(item.createdAt)}</span>
             {item.kind === 'memo' && <ChevronRight className="chev" size={18} aria-hidden="true" />}
@@ -61,7 +67,7 @@ function Row({item, folder, showFolder, act}: {item: Item; folder?: Folder; show
   );
 }
 
-export function DayList({items, folderMap, showFolder, act}: {items: Item[]; folderMap: Map<string, Folder>; showFolder: boolean; act: ItemActions}) {
+export function DayList({items, folderMap, showFolder, act, loadingIds}: {items: Item[]; folderMap: Map<string, Folder>; showFolder: boolean; act: ItemActions; loadingIds?: Set<string>}) {
   const groups = BUCKETS.map(b => ({b, list: items.filter(i => bucketOf(i.createdAt) === b)})).filter(g => g.list.length);
   return (
     <>
@@ -69,7 +75,7 @@ export function DayList({items, folderMap, showFolder, act}: {items: Item[]; fol
         <section className="day" key={g.b} aria-labelledby={`day-${g.b}`}>
           <div className="day-head"><h2 id={`day-${g.b}`}>{g.b}</h2><span className="num">{g.list.length}개</span></div>
           <List hasDividers density="spacious" edge="flush">
-            {g.list.map(i => <Row key={i.id} item={i} folder={i.folderId ? folderMap.get(i.folderId) : undefined} showFolder={showFolder} act={act} />)}
+            {g.list.map(i => <Row key={i.id} item={i} folder={i.folderId ? folderMap.get(i.folderId) : undefined} showFolder={showFolder} act={act} loading={loadingIds?.has(i.id)} />)}
           </List>
         </section>
       ))}
@@ -89,7 +95,7 @@ export function CardGrid({items, folderMap, showFolder, act}: {items: Item[]; fo
               {i.starred && <Star size={15} fill="currentColor" style={{color: 'var(--star)'}} aria-label="즐겨찾기" />}
             </div>
             <p className="card-title">{nameOf(i)}</p>
-            {i.note && <p className="card-desc">{i.note}</p>}
+            {subOf(i) && <p className="card-desc">{i.title ? i.note : lines(i.note).slice(1).join('\n')}</p>}
             <span className="card-src">{i.kind === 'memo' ? '메모' : domainOf(i.url)} · {stamp(i.createdAt)}</span>
             <Meta item={i} folder={folder} showFolder={showFolder} />
           </div>

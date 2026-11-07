@@ -2,7 +2,8 @@ import {flushSync} from 'react-dom';
 
 const reduced = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-type VTDocument = Document & {startViewTransition?: (cb: () => void) => {finished: Promise<void>}};
+interface VT {finished: Promise<void>; ready: Promise<void>; updateCallbackDone: Promise<void>}
+type VTDocument = Document & {startViewTransition?: (cb: () => void) => VT};
 
 /**
  * 화면이 바뀌는 상태 변경을 View Transitions 로 감싼다.
@@ -15,7 +16,12 @@ export function animate(update: () => void) {
     return;
   }
   try {
-    doc.startViewTransition(() => flushSync(update));
+    const vt = doc.startViewTransition(() => flushSync(update));
+    // 전환이 건너뛰어지거나 시간이 넘어도 상태는 이미 바뀌었으니 오류로 올리지 않는다
+    const quiet = () => {};
+    vt.ready.catch(quiet);
+    vt.finished.catch(quiet);
+    vt.updateCallbackDone.catch(quiet);
   } catch {
     update();
   }
