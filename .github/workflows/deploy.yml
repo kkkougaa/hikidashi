@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     # iOS 앱이나 문서만 바뀌면 웹은 다시 배포하지 않는다
-    paths-ignore: ['ios/**', 'docs/**', '.github/workflows/ios.yml']
+    paths-ignore: ['ios/**', 'docs/**', '.github/workflows/ios.yml','.github/workflows/testflight.yml']
   workflow_dispatch:
 
 permissions:
