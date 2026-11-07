@@ -182,10 +182,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           APP="$RUNNER_TEMP/ipa/Payload/Hikidashi.app"
           cp -R "$RUNNER_TEMP/Unsigned.xcarchive/Products/Applications/Hikidashi.app" "$RUNNER_TEMP/ipa/Payload/"
-          # 임시 서명으로 App Group 권한을 넣어 둔다. SideStore 가 이걸 보고 공유 확장과 앱이 같은 저장소를 쓰게 다시 서명한다
-          codesign --force --sign - --entitlements ShareExtension/ShareExtension.entitlements "$APP/PlugIns/ShareExtension.appex"
-          codesign --force --sign - --entitlements Hikidashi/Hikidashi.entitlements "$APP"
-          codesign -d --entitlements - "$APP" 2>/dev/null | grep -c application-groups
+          ls "$APP/PlugIns"
           cd "$RUNNER_TEMP/ipa" && zip -qry ../hikidashi.ipa Payload
           ls -la "$RUNNER_TEMP/hikidashi.ipa"
       - uses: actions/upload-artifact@v4

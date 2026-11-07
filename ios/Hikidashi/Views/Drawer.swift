@@ -107,7 +107,7 @@ struct SettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("viewMode") private var viewMode = "list"
-    @AppStorage(SharedLibrary.defaultFolderKey, store: SharedLibrary.defaults) private var defaultFolder = ""
+    @AppStorage(SharedLibrary.defaultFolderKey) private var defaultFolder = ""
     @AppStorage("lastBackupAt") private var lastBackup: Double = 0
     @State private var backupURL: URL?
     @State private var importing = false

@@ -108,7 +108,7 @@ struct RootView: View {
         .sheet(isPresented: $settingsOpen) { SettingsScreen() }
         .fullScreenCover(item: $store.webPage) { SafariView(url: $0.url).ignoresSafeArea() }
         .preferredColorScheme(Appearance(rawValue: appearance)?.scheme)
-        .onChange(of: scenePhase) { _, phase in if phase == .active { store.reloadFromDisk() } }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { store.drainShareInbox() } }
         .onChange(of: store.folders.map(\.id)) { _, ids in
             // 보고 있던 서랍이 지워지면 전체로
             if case .folder(let id) = scope, !ids.contains(id) { scope = .all }

@@ -31,10 +31,11 @@ targets:
     entitlements:
       path: Hikidashi/Hikidashi.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.kkkougaa.hikidashi]
+        keychain-access-groups: ["$(AppIdentifierPrefix)com.kkkougaa.hikidashi", "$(AppIdentifierPrefix)com.kkkougaa.hikidashi.shared"]
     info:
       path: Hikidashi/Info.plist
       properties:
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
         CFBundleDisplayName: hikidashi
         CFBundleDevelopmentRegion: ko
         CFBundleShortVersionString: $(MARKETING_VERSION)
@@ -68,10 +69,11 @@ targets:
     entitlements:
       path: ShareExtension/ShareExtension.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.kkkougaa.hikidashi]
+        keychain-access-groups: ["$(AppIdentifierPrefix)com.kkkougaa.hikidashi.share", "$(AppIdentifierPrefix)com.kkkougaa.hikidashi.shared"]
     info:
       path: ShareExtension/Info.plist
       properties:
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
         CFBundleDisplayName: hikidashi
         CFBundleDevelopmentRegion: ko
         CFBundleShortVersionString: $(MARKETING_VERSION)

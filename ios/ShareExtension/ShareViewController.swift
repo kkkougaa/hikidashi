@@ -31,7 +31,7 @@ final class ShareViewController: UIViewController {
 @Observable
 final class ShareModel {
     enum State {
-        case saving, saved(title: String, folder: String), duplicate, failed(String)
+        case saving, saved(title: String), failed(String)
         var isError: Bool { if case .failed = self { true } else { false } }
     }
 
@@ -39,14 +39,9 @@ final class ShareModel {
 
     func run(_ items: [NSExtensionItem]) async {
         let (url, text) = await Self.extract(items)
-        var lib = SharedLibrary.load() ?? .seeded()
-        let folderId = SharedLibrary.defaultFolderId(in: lib)
-        let folderName = lib.folder(folderId)?.name ?? "미분류"
-
         var draft: ItemDraft
         if let url {
-            if lib.contains(url: url) { state = .duplicate; return }
-            draft = ItemDraft(kind: .link, url: url, folderId: folderId)
+            draft = ItemDraft(kind: .link, url: url)
             // 정보는 기다릴 만큼만 (공유 시트를 오래 붙잡지 않게)
             if let info = await PageInfoFetcher(timeout: 6).fetch(url) {
                 draft.title = info.title ?? ""
@@ -56,19 +51,17 @@ final class ShareModel {
             }
             if draft.title.isEmpty, draft.note.isEmpty { draft.title = guessTitle(url) }
         } else if let text, !text.isEmpty {
-            draft = ItemDraft(kind: .memo, note: text, folderId: folderId)
+            draft = ItemDraft(kind: .memo, note: text)
         } else {
             state = .failed("저장할 링크나 글을 찾지 못했어요")
             return
         }
 
-        // 그사이 앱이 바꿨을 수 있으니 저장 직전에 다시 읽는다
-        lib = SharedLibrary.load() ?? lib
-        let item = lib.addItem(draft)
-        do {
-            try SharedLibrary.save(lib)
-            state = .saved(title: item.displayTitle, folder: folderName)
-        } catch {
+        // 앱 우편함에 넣어 두면, 앱을 열 때 기본 서랍으로 들어간다
+        if ShareInbox.put(draft) {
+            let title = draft.title.isEmpty ? (draft.note.split(separator: "\n").first.map(String.init) ?? "") : draft.title
+            state = .saved(title: title)
+        } else {
             state = .failed("저장하지 못했어요")
         }
     }
@@ -129,7 +122,6 @@ struct ShareCard: View {
         switch model.state {
         case .saving: ProgressView().controlSize(.large).tint(brand)
         case .saved: Image(systemName: "checkmark.circle.fill").font(.system(size: 34)).foregroundStyle(brand).transition(.scale)
-        case .duplicate: Image(systemName: "bookmark.circle.fill").font(.system(size: 34)).foregroundStyle(.secondary)
         case .failed: Image(systemName: "exclamationmark.circle.fill").font(.system(size: 34)).foregroundStyle(.red)
         }
     }
@@ -137,15 +129,14 @@ struct ShareCard: View {
     private var headline: String {
         switch model.state {
         case .saving: "hikidashi 에 저장 중…"
-        case .saved: "저장했어요"
-        case .duplicate: "이미 저장한 링크예요"
+        case .saved: "hikidashi 에 넣었어요"
         case .failed(let m): m
         }
     }
 
     private var sub: String? {
         switch model.state {
-        case .saved(let title, let folder): "\(folder) · \(title)"
+        case .saved(let title): title.isEmpty ? nil : title
         default: nil
         }
     }

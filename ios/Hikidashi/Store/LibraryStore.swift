@@ -56,13 +56,20 @@ final class LibraryStore {
         do { try SharedLibrary.save(library, to: fileURL) } catch { show("저장하지 못했어요: \(error.localizedDescription)", error: true) }
     }
 
-    /// 앱으로 돌아올 때: 공유 확장이 그사이 넣은 항목을 합친다 (더 최근에 고친 쪽이 남는다)
-    func reloadFromDisk() {
-        guard let disk = SharedLibrary.load(fileURL) else { return }
-        var merged = library
-        let r = merged.importBackup(disk.backup())
-        guard r.items + r.folders > 0 else { return }
-        withAnimation(.snappy) { library = merged }
+    /// 앱으로 돌아올 때: 공유 시트로 넣은 항목을 꺼내 기본 서랍에 넣는다
+    func drainShareInbox() {
+        let entries = ShareInbox.drain()
+        guard !entries.isEmpty else { return }
+        let folder = defaultFolderId
+        var added = 0
+        change {
+            for e in entries {
+                if let u = e.draft.url, $0.contains(url: u) { continue }
+                $0.addItem(e.draft.draft(folderId: folder), now: e.sharedAt)
+                added += 1
+            }
+        }
+        if added > 0 { show(added == 1 ? "공유한 항목을 넣었어요" : "공유한 항목 \(added)개를 넣었어요") }
     }
 
     /// 새 항목이 들어갈 기본 서랍 (설정에서 고른다)
