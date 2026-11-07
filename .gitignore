@@ -3,3 +3,11 @@ dist
 dev-dist
 *.log
 .DS_Store
+# iOS
+ios/Hikidashi.xcodeproj/
+ios/Hikidashi/Info.plist
+ios/HikidashiCore/.build/
+ios/HikidashiCore/.swiftpm/
+*.xcresult
+xcuserdata/
+DerivedData/

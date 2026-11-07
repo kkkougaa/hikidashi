@@ -1,0 +1,71 @@
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: 공통 로직 테스트 (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.1
+    steps:
+      - uses: actions/checkout@v5
+      - run: swift test
+        working-directory: ios/HikidashiCore
+
+  app:
+    name: 앱 빌드·화면 테스트 (iOS 시뮬레이터)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: 가장 새 Xcode 고르기
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      - name: 프로젝트 만들기
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+      - name: 시뮬레이터 고르기
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];c=[(k,x) for k,v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone') and 'SE' not in x['name']];c.sort(key=lambda t:(t[0],t[1]['name']));print(c[-1][1]['udid'])")
+          xcrun simctl list devices | grep "$UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+      - name: 빌드하고 테스트
+        run: |
+          cd ios
+          set -o pipefail
+          xcodebuild test -project Hikidashi.xcodeproj -scheme Hikidashi \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath ../TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO | tee ../xcodebuild.log | grep -E "error:|warning: .*deprecated|Test Case|\*\* (BUILD|TEST)" || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" ../xcodebuild.log
+      - name: 스크린샷 꺼내기
+        if: always()
+        run: |
+          mkdir -p screenshots
+          xcrun xcresulttool export attachments --path TestResults.xcresult --output-path screenshots || true
+          ls -la screenshots | head -40
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-screenshots
+          path: screenshots
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
