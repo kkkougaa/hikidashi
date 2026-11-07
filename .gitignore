@@ -12,3 +12,6 @@ ios/HikidashiCore/.swiftpm/
 xcuserdata/
 DerivedData/
 dist-ipa/
+ios/ShareExtension/Info.plist
+ios/Hikidashi/Hikidashi.entitlements
+ios/ShareExtension/ShareExtension.entitlements

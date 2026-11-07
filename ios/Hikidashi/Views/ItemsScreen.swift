@@ -4,6 +4,7 @@ import HikidashiCore
 /// 한 범위(전체, 즐겨찾기, 서랍, 태그)의 항목 목록. 날짜별로 묶고, 목록·카드로 볼 수 있다
 struct ItemsScreen: View {
     let scope: Scope
+    var onMenu: () -> Void = {}
     @Environment(LibraryStore.self) private var store
     @State private var query = ""
     @AppStorage("viewMode") private var viewMode = "list"
@@ -27,6 +28,10 @@ struct ItemsScreen: View {
         .navigationTitle(store.title(of: scope))
         .searchable(text: $query, prompt: "제목, 메모, 태그, 주소")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: onMenu) { Image(systemName: "sidebar.left") }
+                    .accessibilityLabel("서랍 열기")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Picker("보기 방식", selection: $viewMode.animation(.snappy)) {
                     Image(systemName: "list.bullet").accessibilityLabel("목록").tag("list")
@@ -76,16 +81,30 @@ struct ItemsScreen: View {
         .listStyle(.plain)
     }
 
+    /// 두 줄 벽돌 쌓기: 그림이 있는 카드는 그림 비율대로 길어지고, 짧은 쪽 줄에 다음 카드를 놓는다
     private func grid(_ items: [Item]) -> some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                ForEach(items) { item in
-                    ItemCard(item: item, folder: store.folder(item.folderId), showFolder: showFolder)
-                        .itemActions(item, store: store, swipe: false)
+        var cols: [[Item]] = [[], []]
+        var heights: [CGFloat] = [0, 0]
+        for it in items {
+            let c = heights[0] <= heights[1] ? 0 : 1
+            cols[c].append(it)
+            heights[c] += it.coverImage != nil ? 1 + (ImageCache.ratio(it.coverImage) ?? 0.75) : 0.8
+        }
+        return ScrollView {
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(0..<2, id: \.self) { c in
+                    LazyVStack(spacing: 10) {
+                        ForEach(cols[c]) { item in
+                            ItemCard(item: item, folder: store.folder(item.folderId), showFolder: showFolder)
+                                .itemActions(item, store: store, swipe: false)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 96)
+            .padding(.horizontal, 14)
+            .padding(.top, 4)
+            .padding(.bottom, 110)
         }
     }
 }
@@ -120,33 +139,66 @@ struct ItemRow: View {
     }
 }
 
-/// 카드 보기 한 칸
+/// 카드 보기 한 칸. 글에 그림이 있으면 그림을 원래 비율대로 크게 보여준다
 struct ItemCard: View {
     let item: Item
     let folder: Folder?
     let showFolder: Bool
     @Environment(LibraryStore.self) private var store
+    @State private var coverFailed = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                ItemIcon(item: item, folder: folder)
-                Spacer()
-                if item.starred { Image(systemName: "star.fill").font(.caption).foregroundStyle(Color.star) }
+        let cover = coverFailed ? nil : item.coverImage
+        VStack(alignment: .leading, spacing: 0) {
+            if let cover {
+                RemoteImage(url: cover, onFail: { coverFailed = true })
+                    .overlay(alignment: .topTrailing) { if item.starred { starBadge.padding(8) } }
             }
-            Text(item.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(2).multilineTextAlignment(.leading)
-            let sub = item.displaySubtitle
-            if !sub.isEmpty { Text(sub).font(.footnote).foregroundStyle(.secondary).lineLimit(3) }
-            Spacer(minLength: 0)
-            Text("\(item.kind == .memo ? "메모" : (item.siteName ?? domain(of: item.url))) · \(store.dates.stamp(item.createdAt))")
-                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            if showFolder { FolderPill(folder: folder) }
+            VStack(alignment: .leading, spacing: 6) {
+                if cover == nil {
+                    HStack(alignment: .top) {
+                        ItemIcon(item: item, folder: folder, size: 40)
+                        Spacer()
+                        if item.starred { Image(systemName: "star.fill").font(.caption).foregroundStyle(Color.star) }
+                    }
+                    .padding(.bottom, 2)
+                }
+                Text(item.displayTitle).font(.subheadline.weight(.semibold)).lineLimit(cover == nil ? 3 : 2).multilineTextAlignment(.leading)
+                let sub = item.displaySubtitle
+                if !sub.isEmpty { Text(sub).font(.footnote).foregroundStyle(.secondary).lineLimit(cover == nil ? 4 : 2) }
+                // 목록과 같은 줄: 서랍 · 출처 사이트 칩(로고) · 태그
+                FlowLayout(spacing: 5) {
+                    if showFolder { FolderPill(folder: folder) }
+                    if item.kind == .link, let url = item.url { SourceChip(url: url, siteName: item.siteName) }
+                    ForEach(item.tags, id: \.self) { t in
+                        Text("#\(t)").font(.caption).foregroundStyle(.secondary).lineLimit(1).frame(height: 22)
+                    }
+                }
+                .padding(.top, 2)
+                Text(item.kind == .memo ? "메모 · \(store.dates.stamp(item.createdAt))" : store.dates.stamp(item.createdAt))
+                    .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+            }
+            .padding(12)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 170, alignment: .topLeading)
-        .background(Color(.secondarySystemGroupedBackground), in: .rect(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.06)))
-        .contentShape(.rect(cornerRadius: 16))
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(.rect(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.primary.opacity(0.07)))
+        .contentShape(.rect(cornerRadius: 18))
+    }
+
+    private var starBadge: some View {
+        Image(systemName: "star.fill").font(.caption.weight(.bold)).foregroundStyle(Color.star)
+            .frame(width: 26, height: 26).background(.regularMaterial, in: .circle)
+    }
+}
+
+extension Item {
+    /// 카드에 크게 보여줄 그림 (프로필 사진처럼 작은 대체 그림은 빼고)
+    var coverImage: String? {
+        guard kind == .link, let image, !image.isEmpty else { return nil }
+        if image.contains("profile_images") { return nil }
+        return image
     }
 }
 

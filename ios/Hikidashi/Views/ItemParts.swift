@@ -127,7 +127,8 @@ struct FlowLayout: Layout {
         let width = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, row: CGFloat = 0, maxX: CGFloat = 0
         for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
+            // 줄보다 넓은 칩은 줄 너비로 줄인다 (말줄임)
+            let size = s.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
             if x > 0, x + size.width > width { x = 0; y += row + spacing; row = 0 }
             x += size.width + spacing
             row = max(row, size.height)
@@ -139,11 +140,74 @@ struct FlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var x = bounds.minX, y = bounds.minY, row: CGFloat = 0
         for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
+            let size = s.sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
             if x > bounds.minX, x + size.width > bounds.maxX { x = bounds.minX; y += row + spacing; row = 0 }
             s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
             x += size.width + spacing
             row = max(row, size.height)
         }
+    }
+}
+
+/// 그림을 받아 두고 비율도 기억한다 (벽돌 쌓기 배치가 덜 흔들리게)
+enum ImageCache {
+    private static let images = NSCache<NSString, UIImage>()
+    @MainActor private static var ratios: [String: CGFloat] = [:]
+
+    static func image(_ url: String) -> UIImage? { images.object(forKey: url as NSString) }
+
+    /// 세로 ÷ 가로. 너무 길거나 납작하지 않게 자른다
+    @MainActor static func ratio(_ url: String?) -> CGFloat? { url.flatMap { ratios[$0] } }
+
+    @MainActor static func store(_ img: UIImage, for url: String) {
+        images.setObject(img, forKey: url as NSString)
+        if img.size.width > 0 { ratios[url] = min(1.6, max(0.45, img.size.height / img.size.width)) }
+    }
+
+    static func load(_ url: String) async -> UIImage? {
+        if let hit = image(url) { return hit }
+        guard let u = URL(string: url) else { return nil }
+        var req = URLRequest(url: u, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 15)
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
+              let img = UIImage(data: data) else { return nil }
+        // 큰 그림은 줄여서 메모리를 아낀다
+        let maxSide: CGFloat = 900
+        let s = img.size
+        let small: UIImage
+        if max(s.width, s.height) > maxSide {
+            let k = maxSide / max(s.width, s.height)
+            small = await img.byPreparingThumbnail(ofSize: CGSize(width: s.width * k, height: s.height * k)) ?? img
+        } else {
+            small = img
+        }
+        await store(small, for: url)
+        return small
+    }
+}
+
+/// 가로를 꽉 채우고 세로는 그림 비율대로 (너무 긴 그림은 잘라서)
+struct RemoteImage: View {
+    let url: String
+    var onFail: () -> Void = {}
+    @State private var image: UIImage?
+
+    var body: some View {
+        let ratio = image.map { min(1.6, max(0.45, $0.size.height / max($0.size.width, 1))) } ?? ImageCache.ratio(url) ?? 0.75
+        Color(.tertiarySystemFill)
+            .aspectRatio(1 / ratio, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill().transition(.opacity)
+                }
+            }
+            .clipped()
+            .task(id: url) {
+                if image == nil { image = ImageCache.image(url) }
+                guard image == nil else { return }
+                if let img = await ImageCache.load(url) { withAnimation(.easeOut(duration: 0.2)) { image = img } } else { onFail() }
+            }
+            .accessibilityHidden(true)
     }
 }

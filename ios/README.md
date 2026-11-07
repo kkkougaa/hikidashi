@@ -8,10 +8,12 @@ SwiftUI 로 만든 아이폰 앱. 웹앱과 같은 데이터 형식을 쓰고, �
 ios/
   project.yml              XcodeGen 설정 (Xcode 프로젝트는 여기서 만든다)
   HikidashiCore/           화면과 상관없는 로직: 데이터, 링크 정보, 백업 (리눅스에서도 테스트됨)
+  Shared/                  앱과 공유 확장이 같이 쓰는 저장소 (App Group 의 library.json)
+  ShareExtension/          공유 시트의 hikidashi: 누르면 정보까지 채워 바로 저장
   Hikidashi/
-    App/                   앱 시작, 탭, 시트 연결
+    App/                   앱 시작, 왼쪽 서랍, 시트 연결
     Store/LibraryStore     상태와 저장 (앱 폴더의 library.json, 백업과 같은 형식)
-    Views/                 목록·카드, 추가/편집, 메모 보기, 서랍, 설정, + 버튼
+    Views/                 목록·카드(벽돌 쌓기), 추가/편집, 메모 보기, 서랍, 설정(테마·태그·서랍 관리), + 버튼
     Resources/             앱 아이콘, 강조색
   HikidashiUITests/        예시 데이터로 화면을 띄워 스크린샷을 찍는 테스트
 ```
@@ -39,7 +41,8 @@ cd ios && xcodegen generate && open Hikidashi.xcodeproj
 - 링크 정보를 페이지에서 직접 읽는다 (웹은 CORS 때문에 Jina Reader 를 거친다). X 는 똑같이 FxTwitter.
 - 붙여넣기는 애플 기본 붙여넣기 버튼이라 권한 창이 뜨지 않는다. + 버튼을 끌어올리는 빠른 추가는 클립보드를 읽어서 iOS 가 한 번 묻는다.
 - 이모지는 애플 이모지로 보인다 (웹은 토스페이스).
-- iOS 26 에서는 + 버튼에 진짜 리퀴드 글래스를 쓰고, 그 전 버전은 비슷하게 흉내 낸다.
+- 공유 시트에서 hikidashi 를 누르면 바로 저장된다 (웹은 홈 화면에 추가한 PWA 의 공유 대상으로 시트가 열린다).
+- iOS 26 에서는 + 버튼과 알림에 진짜 리퀴드 글래스를 쓰고, 그 전 버전은 비슷하게 흉내 낸다.
 
 ## TestFlight
 

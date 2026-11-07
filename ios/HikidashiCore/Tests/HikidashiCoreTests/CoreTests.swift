@@ -161,6 +161,30 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(lib.tagsByUse, ["b", "a"])
         XCTAssertEqual(lib.tagCounts.map(\.tag), ["a", "b"])
     }
+
+    func testRenameRemoveTag() {
+        var lib = Library()
+        lib.addItem(ItemDraft(kind: .memo, title: "a", tags: ["css", "참고"]))
+        lib.addItem(ItemDraft(kind: .memo, title: "b", tags: ["CSS", "참고"]))
+        lib.addItem(ItemDraft(kind: .memo, title: "c", tags: ["etc"]))
+        XCTAssertEqual(lib.renameTag("CSS", to: "#css "), 1)
+        XCTAssertEqual(lib.tagCounts.first { $0.tag == "css" }?.count, 2)
+        XCTAssertNil(lib.tagCounts.first { $0.tag == "CSS" })
+        // 합쳐질 때 같은 태그가 두 번 들어가지 않는다
+        XCTAssertEqual(lib.renameTag("참고", to: "css"), 2)
+        XCTAssertTrue(lib.liveItems.allSatisfy { $0.tags.filter { $0 == "css" }.count <= 1 })
+        XCTAssertEqual(lib.renameTag("css", to: "  "), 0)
+        XCTAssertEqual(lib.removeTag("css"), 2)
+        XCTAssertEqual(lib.tagCounts.map(\.tag), ["etc"])
+    }
+
+    func testReorderFolders() {
+        var lib = Library.seeded(now: 1)
+        let ids = lib.liveFolders.map(\.id)
+        lib.reorderFolders([ids[2], ids[0], ids[1]], now: 5)
+        XCTAssertEqual(lib.liveFolders.map(\.id), [ids[2], ids[0], ids[1]])
+        XCTAssertTrue(lib.folders.allSatisfy { $0.updatedAt == 5 })
+    }
 }
 
 final class BackupTests: XCTestCase {

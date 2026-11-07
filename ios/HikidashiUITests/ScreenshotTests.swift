@@ -47,15 +47,26 @@ final class ScreenshotTests: XCTestCase {
         snap("04-editor")
         app.buttons["닫기"].tap()
 
-        // 서랍 탭
-        app.tabBars.buttons["서랍"].tap()
+        // 왼쪽 서랍
+        app.buttons["서랍 열기"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["설정"].waitForExistence(timeout: 3), "서랍이 열려야 한다")
         sleep(1)
-        snap("05-folders")
+        snap("05-drawer")
 
-        // 설정 탭
-        app.tabBars.buttons["설정"].tap()
+        // 서랍에서 고르면 그 서랍만 보인다
+        app.buttons["아이디어"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["장보기"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["CSS 그리드 레이아웃"].exists, "다른 서랍 항목은 안 보여야 한다")
+
+        // 설정
+        app.buttons["서랍 열기"].firstMatch.tap()
+        app.buttons["설정"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["설정 닫기"].waitForExistence(timeout: 5))
         sleep(1)
         snap("06-settings")
+        app.buttons["태그 관리"].firstMatch.tap()
+        sleep(1)
+        snap("08-tags")
     }
 
     func testSwipeStarAndDelete() {

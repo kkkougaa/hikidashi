@@ -113,6 +113,41 @@ public struct Library: Codable, Equatable, Sendable {
         for m in moved where item(m)?.folderId == nil { update(m, now: now) { $0.folderId = id } }
     }
 
+    // MARK: 태그
+
+    /// 태그 이름 바꾸기. 같은 이름이 이미 있으면 합쳐진다. 바뀐 항목 수를 돌려준다
+    @discardableResult
+    public mutating func renameTag(_ old: String, to new: String, now: Millis = .now) -> Int {
+        let to = normalizeTag(new)
+        guard !to.isEmpty, to != old else { return 0 }
+        let ids = liveItems.filter { $0.tags.contains(old) }.map(\.id)
+        for id in ids {
+            update(id, now: now) { it in
+                var out: [String] = []
+                for t in it.tags.map({ $0 == old ? to : $0 }) where !out.contains(t) { out.append(t) }
+                it.tags = out
+            }
+        }
+        return ids.count
+    }
+
+    /// 모든 항목에서 태그를 뺀다. 바뀐 항목 수를 돌려준다
+    @discardableResult
+    public mutating func removeTag(_ tag: String, now: Millis = .now) -> Int {
+        let ids = liveItems.filter { $0.tags.contains(tag) }.map(\.id)
+        for id in ids { update(id, now: now) { $0.tags.removeAll { $0 == tag } } }
+        return ids.count
+    }
+
+    /// 서랍 순서를 주어진 id 순서로 바꾼다
+    public mutating func reorderFolders(_ ids: [String], now: Millis = .now) {
+        for (n, id) in ids.enumerated() {
+            guard let i = folders.firstIndex(where: { $0.id == id }), folders[i].order != n else { continue }
+            folders[i].order = n
+            folders[i].updatedAt = max(now, folders[i].updatedAt + 1)
+        }
+    }
+
     // MARK: 백업
 
     public func backup(now: Millis = .now) -> Backup { Backup(folders: folders, items: items, exportedAt: now) }

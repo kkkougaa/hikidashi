@@ -83,18 +83,19 @@ jobs:
           token = jwt.encode({"iss": os.environ["ASC_ISSUER_ID"], "iat": now, "exp": now + 600, "aud": "appstoreconnect-v1"},
                              key, algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"], "typ": "JWT"})
           h = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
-          bid = "com.kkkougaa.hikidashi"
-          q = urllib.request.Request("https://api.appstoreconnect.apple.com/v1/bundleIds?filter[identifier]=" + bid, headers=h)
-          found = [d for d in json.load(urllib.request.urlopen(q))["data"] if d["attributes"]["identifier"] == bid]
-          if found:
-              print("번들 ID 이미 있음:", bid)
-          else:
-              body = {"data": {"type": "bundleIds", "attributes": {"identifier": bid, "name": "hikidashi", "platform": "IOS"}}}
+          # 앱과 공유 확장. App Group 은 아래 아카이브에서 Xcode 자동 서명이 붙인다
+          for bid, name in [("com.kkkougaa.hikidashi", "hikidashi"), ("com.kkkougaa.hikidashi.share", "hikidashi share")]:
+              q = urllib.request.Request("https://api.appstoreconnect.apple.com/v1/bundleIds?filter[identifier]=" + bid, headers=h)
+              found = [d for d in json.load(urllib.request.urlopen(q))["data"] if d["attributes"]["identifier"] == bid]
+              if found:
+                  print("번들 ID 이미 있음:", bid)
+                  continue
+              body = {"data": {"type": "bundleIds", "attributes": {"identifier": bid, "name": name, "platform": "IOS"}}}
               try:
                   urllib.request.urlopen(urllib.request.Request("https://api.appstoreconnect.apple.com/v1/bundleIds", data=json.dumps(body).encode(), headers=h, method="POST"))
                   print("번들 ID 등록함:", bid)
               except urllib.error.HTTPError as e:
-                  print("::error::번들 ID 등록 실패", e.code, e.read().decode()[:500]); raise SystemExit(1)
+                  print("::error::번들 ID 등록 실패", bid, e.code, e.read().decode()[:500]); raise SystemExit(1)
           PY
       - name: 프로젝트 만들기
         if: steps.check.outputs.ready == 'true'
@@ -179,7 +180,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             CURRENT_PROJECT_VERSION=$(( ${{ github.run_number }} + 100 )) | grep -E "error:|\*\* ARCHIVE" || true
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          APP="$RUNNER_TEMP/ipa/Payload/Hikidashi.app"
           cp -R "$RUNNER_TEMP/Unsigned.xcarchive/Products/Applications/Hikidashi.app" "$RUNNER_TEMP/ipa/Payload/"
+          # 임시 서명으로 App Group 권한을 넣어 둔다. SideStore 가 이걸 보고 공유 확장과 앱이 같은 저장소를 쓰게 다시 서명한다
+          codesign --force --sign - --entitlements ShareExtension/ShareExtension.entitlements "$APP/PlugIns/ShareExtension.appex"
+          codesign --force --sign - --entitlements Hikidashi/Hikidashi.entitlements "$APP"
+          codesign -d --entitlements - "$APP" 2>/dev/null | grep -c application-groups
           cd "$RUNNER_TEMP/ipa" && zip -qry ../hikidashi.ipa Payload
           ls -la "$RUNNER_TEMP/hikidashi.ipa"
       - uses: actions/upload-artifact@v4

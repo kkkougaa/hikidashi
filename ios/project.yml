@@ -23,8 +23,15 @@ targets:
     platform: iOS
     sources:
       - path: Hikidashi
+      - path: Shared
     dependencies:
       - package: HikidashiCore
+      - target: ShareExtension
+        embed: true
+    entitlements:
+      path: Hikidashi/Hikidashi.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.kkkougaa.hikidashi]
     info:
       path: Hikidashi/Info.plist
       properties:
@@ -48,6 +55,41 @@ targets:
         CODE_SIGN_STYLE: Automatic
         # 내 아이폰에 설치하려면 Xcode 에서 Signing & Capabilities 의 Team 을 고르면 된다
         DEVELOPMENT_TEAM: ""
+
+  # 공유 시트의 "hikidashi". 누르면 바로 저장하고 닫힌다
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+      - path: Shared
+    dependencies:
+      - package: HikidashiCore
+    entitlements:
+      path: ShareExtension/ShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.kkkougaa.hikidashi]
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: hikidashi
+        CFBundleDevelopmentRegion: ko
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.kkkougaa.hikidashi.share
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        SKIP_INSTALL: YES
 
   HikidashiUITests:
     type: bundle.ui-testing

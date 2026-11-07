@@ -42,27 +42,31 @@ final class LibraryStore {
     let dates = DateText()
 
     init(fileURL: URL? = nil, sample: Bool = false) {
-        let url = fileURL ?? Self.defaultFileURL
+        let url = fileURL ?? SharedLibrary.fileURL
         self.fileURL = url
         if sample {
             library = Self.sampleLibrary()
-        } else if let data = try? Data(contentsOf: url), let b = try? parseBackup(data) {
-            library = Library(folders: b.folders, items: b.items)
         } else {
-            library = .seeded()
+            library = SharedLibrary.load(url) ?? .seeded()
         }
         save()
     }
 
-    static var defaultFileURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("library.json")
+    private func save() {
+        do { try SharedLibrary.save(library, to: fileURL) } catch { show("저장하지 못했어요: \(error.localizedDescription)", error: true) }
     }
 
-    private func save() {
-        do { try library.backup().encoded().write(to: fileURL, options: .atomic) } catch { show("저장하지 못했어요: \(error.localizedDescription)", error: true) }
+    /// 앱으로 돌아올 때: 공유 확장이 그사이 넣은 항목을 합친다 (더 최근에 고친 쪽이 남는다)
+    func reloadFromDisk() {
+        guard let disk = SharedLibrary.load(fileURL) else { return }
+        var merged = library
+        let r = merged.importBackup(disk.backup())
+        guard r.items + r.folders > 0 else { return }
+        withAnimation(.snappy) { library = merged }
     }
+
+    /// 새 항목이 들어갈 기본 서랍 (설정에서 고른다)
+    var defaultFolderId: String? { SharedLibrary.defaultFolderId(in: library) }
 
     private func change(_ animated: Bool = true, _ body: (inout Library) -> Void) {
         if animated {
@@ -112,10 +116,9 @@ final class LibraryStore {
     func show(_ text: String, error: Bool = false, undo: (() -> Void)? = nil) {
         let t = ToastMessage(text: text, isError: error, undo: undo)
         withAnimation(.snappy) { toast = t }
-        // 되돌리기가 없는 알림만 저절로 사라진다
-        guard undo == nil else { return }
+        // 잠깐만 보이고 사라진다. 되돌리기가 있으면 누를 시간만큼 조금 더
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(undo == nil ? 1.6 : 3.5))
             if self?.toast?.id == t.id { withAnimation(.snappy) { self?.toast = nil } }
         }
     }
@@ -151,12 +154,33 @@ final class LibraryStore {
         show("‘\(f.name)’ 서랍 삭제함") { [weak self] in self?.change { $0.restoreFolder(f.id, moved: moved) } }
     }
 
+    func reorderFolders(_ ids: [String]) { change { $0.reorderFolders(ids) } }
+
+    // MARK: 태그
+
+    func renameTag(_ old: String, to new: String) {
+        let before = library
+        var n = 0
+        change { n = $0.renameTag(old, to: new) }
+        guard n > 0 else { return }
+        show("#\(old) → #\(normalizeTag(new))") { [weak self] in self?.change { $0 = before } }
+    }
+
+    func removeTag(_ tag: String) {
+        let before = library
+        var n = 0
+        change { n = $0.removeTag(tag) }
+        guard n > 0 else { return }
+        show("#\(tag) 태그를 항목 \(n)개에서 뺐어요") { [weak self] in self?.change { $0 = before } }
+    }
+
     // MARK: 링크 정보
 
     func fetchInfo(_ url: String) async -> PageInfo? { await fetcher.fetch(url) }
 
     /// + 버튼을 끌어올렸다 놓으면: 클립보드 링크를 바로 넣고 정보는 받는 대로 채운다
-    func quickAddFromPasteboard(folderId: String?) {
+    func quickAddFromPasteboard(into folder: String? = nil) {
+        let folderId = folder ?? defaultFolderId
         guard let text = UIPasteboard.general.string else { return show("복사한 링크가 없어요. 링크를 복사한 뒤 다시 해보세요") }
         guard let url = normalizeURL(text) ?? findURL(in: text) else { return show("복사한 링크가 없어요. 링크를 복사한 뒤 다시 해보세요") }
         if library.contains(url: url) { return show("이미 저장한 링크예요") }
@@ -186,7 +210,6 @@ final class LibraryStore {
     func writeBackupFile() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(Backup.fileName())
         try library.backup().encoded().write(to: url, options: .atomic)
-        UserDefaults.standard.set(Date(), forKey: "lastBackupAt")
         return url
     }
 
