@@ -77,6 +77,8 @@ export function App() {
     for (const i of lib.items) for (const t of i.tags) m.set(t, (m.get(t) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   }, [lib.items]);
+  // 태그 추천: 자주 쓴 순
+  const allTags = useMemo(() => [...tags].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko')).map(([t]) => t), [tags]);
   const unfiled = useMemo(() => lib.items.filter(i => !i.folderId || !folderMap.has(i.folderId)).length, [lib.items, folderMap]);
 
   const inScope = (i: Item) => {
@@ -198,7 +200,7 @@ export function App() {
       </MobileNav>
 
       <ItemSheet isOpen={sheet === 'item'} onClose={() => { setSheet(null); setEditing(null); setPrefill(undefined); }}
-        editing={editing} prefill={prefill} folders={lib.folders} defaultFolderId={defaultFolderId} onSave={save} />
+        editing={editing} prefill={prefill} folders={lib.folders} defaultFolderId={defaultFolderId} allTags={allTags} onSave={save} />
       <MemoSheet item={memo} folder={memo?.folderId ? folderMap.get(memo.folderId) : undefined} onClose={() => setMemo(null)} onEdit={act.edit} onRemove={act.remove} />
       <FoldersSheet isOpen={sheet === 'folders'} onClose={() => setSheet(null)} folders={lib.folders} counts={counts}
         onAdd={(n, c) => { lib.addFolder(n, c); notify(`‘${n}’ 서랍을 만들었어요`); }}

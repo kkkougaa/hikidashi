@@ -39,13 +39,17 @@ export interface Item extends Base {
   title: string;
   /** 링크는 한 줄 메모, 메모는 본문 */
   note: string;
+  /** 링크 글의 대표 이미지 주소. 없으면 사이트 로고를 쓴다 */
+  image?: string;
+  /** 사이트가 밝힌 이름 (예: MDN Web Docs) */
+  siteName?: string;
   /** null 이면 미분류 */
   folderId: string | null;
   tags: string[];
   starred: boolean;
 }
 
-export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags'>;
+export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags' | 'image' | 'siteName'>;
 
 export interface Backup {
   app: 'hikidashi';

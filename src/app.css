@@ -126,3 +126,36 @@ body { margin: 0; background: var(--color-background-body); -webkit-font-smoothi
 .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--color-background-surface), 0 0 0 4px var(--c); }
 .swatch:focus-visible { outline: 2px solid var(--color-text-primary); outline-offset: 4px; }
 .swatch svg { width: 20px; height: 20px; }
+
+/* ── 항목 아이콘: 글 이미지 / 사이트 로고 ── */
+.block.thumb { background: var(--color-background-muted); overflow: hidden; outline: 1px solid light-dark(rgba(0,0,0,.08), rgba(255,255,255,.1)); outline-offset: -1px; }
+.block.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.block.thumb.logo { background: light-dark(#FFFFFF, #F2F4F7); }
+.block.thumb.logo img { width: 26px; height: 26px; object-fit: contain; }
+
+/* ── 출처 칩 ── */
+.source-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; max-width: 160px; padding-inline: 6px 8px; border-radius: 6px; background: var(--color-background-muted); color: var(--color-text-primary); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
+.source-chip img { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+.source-dot { display: grid; place-items: center; width: 14px; height: 14px; border-radius: 3px; background: var(--color-text-secondary); color: var(--color-background-body); font-size: 9px; font-weight: 700; flex: none; }
+.source-name { overflow: hidden; text-overflow: ellipsis; }
+
+/* ── 태그 입력 ── */
+.tag-field { display: flex; flex-direction: column; gap: 8px; }
+.tag-label { font-size: 14px; font-weight: 500; color: var(--color-text-primary); }
+.tag-box { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 48px; padding: 8px 10px; border: 1px solid var(--color-border-emphasized, var(--color-border)); border-radius: var(--radius-element, 10px); background: var(--color-background-surface); cursor: text; }
+.tag-box:focus-within { outline: 2px solid var(--color-accent); outline-offset: -1px; }
+.tag-box input { flex: 1; min-width: 96px; border: 0; outline: none; background: transparent; color: var(--color-text-primary); font: inherit; font-size: 16px; padding: 4px 2px; }
+.tag-box input::placeholder { color: var(--color-text-secondary); }
+.tag-chip { display: inline-flex; align-items: center; gap: 2px; height: 28px; padding-inline: 10px 4px; border-radius: 8px; background: var(--color-accent-muted); color: var(--color-text-accent); font-size: 14px; font-weight: 600; }
+.tag-chip button { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: inherit; cursor: pointer; }
+.tag-chip button:focus-visible { outline: 2px solid var(--color-accent); }
+.tag-field .source-chip { height: 28px; font-size: 13px; }
+.tag-suggest { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-suggest-chip { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding-inline: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--color-background-surface); color: var(--color-text-secondary); font: inherit; font-size: 14px; cursor: pointer; }
+.tag-suggest-chip.new { border-style: dashed; color: var(--color-text-accent); }
+.tag-suggest-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+
+/* ── 페이지 정보 가져오기 ── */
+.fetch-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; color: var(--color-text-secondary); }
+.link-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 4px; border: 0; background: none; color: var(--color-text-accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.fetch-preview { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--color-text-secondary); }

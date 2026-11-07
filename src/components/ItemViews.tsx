@@ -27,14 +27,13 @@ function menuFor(i: Item, act: ItemActions) {
 }
 
 function Row({item, folder, showFolder, act}: {item: Item; folder?: Folder; showFolder: boolean; act: ItemActions}) {
-  const sub = item.kind === 'memo'
-    ? item.note.split('\n').find(l => l.trim()) ?? ''
-    : [domainOf(item.url), item.note].filter(Boolean).join(' · ');
+  // 링크의 사이트는 출처 칩에 나오므로 여기엔 내용만
+  const sub = item.kind === 'memo' ? item.note.split('\n').find(l => l.trim()) ?? '' : item.note.split('\n')[0] ?? '';
   return (
     <ContextMenu items={menuFor(item, act)} presentation="adaptive" label={nameOf(item)} menuWidth={190}>
       <ListItem
         label={<span className="row-title">{nameOf(item)}</span>}
-        description={<span className="row-text"><span className="row-sub">{sub}</span><Meta item={item} folder={folder} showFolder={showFolder} /></span>}
+        description={<span className="row-text">{sub && <span className="row-sub">{sub}</span>}<Meta item={item} folder={folder} showFolder={showFolder} /></span>}
         startContent={<Block item={item} folder={folder} />}
         endContent={
           <span className="row-end">
