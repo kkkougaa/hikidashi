@@ -1,3 +1,4 @@
+import type {CSSProperties} from 'react';
 import {ChevronRight, Copy, Pencil, Star, Trash2} from 'lucide-react';
 import {List, ListItem} from '@astryxdesign/core/List';
 import {ClickableCard} from '@astryxdesign/core/ClickableCard';
@@ -13,6 +14,9 @@ export interface ItemActions {
   copy: (i: Item) => void;
   remove: (i: Item) => void;
 }
+
+/** 항목마다 고유한 전환 이름: 지우거나 넣을 때 다른 줄이 제자리로 미끄러진다 */
+const vtName = (i: Item) => ({viewTransitionName: `it-${i.id.replace(/[^a-zA-Z0-9-]/g, '')}`}) as CSSProperties;
 
 const nameOf = (i: Item) => i.title || (i.kind === 'memo' ? '제목 없는 메모' : domainOf(i.url));
 
@@ -30,6 +34,7 @@ function Row({item, folder, showFolder, act}: {item: Item; folder?: Folder; show
   // 링크의 사이트는 출처 칩에 나오므로 여기엔 내용만
   const sub = item.kind === 'memo' ? item.note.split('\n').find(l => l.trim()) ?? '' : item.note.split('\n')[0] ?? '';
   return (
+    <div className="vt-row" style={vtName(item)}>
     <ContextMenu items={menuFor(item, act)} presentation="adaptive" label={nameOf(item)} menuWidth={190}>
       <ListItem
         label={<span className="row-title">{nameOf(item)}</span>}
@@ -52,6 +57,7 @@ function Row({item, folder, showFolder, act}: {item: Item; folder?: Folder; show
         }}
       />
     </ContextMenu>
+    </div>
   );
 }
 
@@ -89,11 +95,13 @@ export function CardGrid({items, folderMap, showFolder, act}: {items: Item[]; fo
           </div>
         );
         return (
-          <ContextMenu key={i.id} items={menuFor(i, act)} presentation="adaptive" label={nameOf(i)} menuWidth={190}>
+          <div key={i.id} className="vt-row" style={vtName(i)}>
+          <ContextMenu items={menuFor(i, act)} presentation="adaptive" label={nameOf(i)} menuWidth={190}>
             {i.kind === 'link'
               ? <ClickableCard label={nameOf(i)} href={i.url} target="_blank" padding={3}>{body}</ClickableCard>
               : <ClickableCard label={nameOf(i)} onClick={() => act.open(i)} padding={3}>{body}</ClickableCard>}
           </ContextMenu>
+          </div>
         );
       })}
     </div>

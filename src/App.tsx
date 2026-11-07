@@ -1,5 +1,8 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
+import {flushSync} from 'react-dom';
 import {Hash, Inbox, LayoutGrid, Menu, Plus, Rows3, Search, Settings, SlidersHorizontal, Star, Tray} from './icons';
+import {SegmentedControl, SegmentedControlItem} from '@astryxdesign/core/SegmentedControl';
+import {afterSheet, animate, haptic} from './lib/motion';
 import {MobileNav} from '@astryxdesign/core/MobileNav';
 import {SideNavItem, SideNavSection} from '@astryxdesign/core/SideNav';
 import {TextInput} from '@astryxdesign/core/TextInput';
@@ -54,6 +57,9 @@ export function App() {
   const [prefill, setPrefill] = useState<Partial<ItemDraft> | undefined>();
   const [memo, setMemo] = useState<Item | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLElement>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const toTop = (smooth = true) => scrollRef.current?.scrollTo({top: 0, behavior: smooth ? 'smooth' : 'auto'});
 
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* 저장 못 해도 동작엔 지장 없음 */ } }, [view]);
   useEffect(() => {
@@ -61,7 +67,6 @@ export function App() {
     const shared = readShared();
     if (shared) { setPrefill(shared); setEditing(null); setSheet('item'); }
   }, [lib.ready]);
-  useEffect(() => { if (searching) searchRef.current?.querySelector('input')?.focus(); }, [searching]);
 
   const folderMap = useMemo(() => new Map(lib.folders.map(f => [f.id, f])), [lib.folders]);
   // 지워진 서랍을 보고 있었다면 전체로
@@ -97,13 +102,27 @@ export function App() {
   const showFolder = scope.type !== 'folder';
 
   const notify = (body: string, type: 'info' | 'error' = 'info') => toast({body, type, uniqueID: 'notice'});
-  const pick = (s: Scope) => { setScope(s); setNavOpen(false); };
+  /** 범위를 바꾼다. 같은 탭을 다시 누르면 맨 위로 */
+  const goto = (s: Scope) => {
+    if (JSON.stringify(s) === JSON.stringify(scope)) return toTop();
+    animate(() => setScope(s));
+    toTop(false);
+  };
+  const pick = (s: Scope) => { setNavOpen(false); goto(s); };
+  // iOS 는 사용자가 누른 그 순간에 포커스해야 키보드가 올라와서 동기로 처리한다
+  const toggleSearch = () => {
+    if (searching) { setQ(''); setSearching(false); searchRef.current?.querySelector('input')?.blur(); return; }
+    flushSync(() => setSearching(true));
+    searchRef.current?.querySelector('input')?.focus({preventScroll: true});
+    toTop();
+  };
+  const changeView = (v: 'list' | 'card') => { if (v !== view) animate(() => setView(v)); };
   const openAdd = () => { setEditing(null); setPrefill(undefined); setSheet('item'); };
 
   const act: ItemActions = {
     open: i => setMemo(i),
     edit: i => { setMemo(null); setEditing(i); setPrefill(undefined); setSheet('item'); },
-    toggleStar: i => lib.updateItem(i.id, {starred: !i.starred}),
+    toggleStar: i => { haptic(); animate(() => lib.updateItem(i.id, {starred: !i.starred})); },
     copy: i => {
       navigator.clipboard.writeText(i.url ?? '').then(
         () => notify('주소를 복사했어요'),
@@ -111,18 +130,19 @@ export function App() {
       );
     },
     remove: i => {
-      setMemo(null);
-      lib.removeItem(i.id);
+      haptic(15);
+      // 메모 시트에서 지웠으면 시트가 닫힌 뒤에 목록에서 빠지게
+      if (memo) { setMemo(null); afterSheet(() => lib.removeItem(i.id)); } else animate(() => lib.removeItem(i.id));
       const dismiss = toast({
         body: `‘${i.title || '메모'}’ 삭제함`, uniqueID: 'undo', isAutoHide: false,
-        endContent: <Button label="되돌리기" variant="ghost" size="sm" onClick={() => { lib.restoreItem(i.id); dismiss(); }} />,
+        endContent: <Button label="되돌리기" variant="ghost" size="sm" onClick={() => { animate(() => lib.restoreItem(i.id)); dismiss(); }} />,
       });
     },
   };
 
   const save = (d: ItemDraft) => {
     if (editing) { lib.updateItem(editing.id, d); notify('고쳤어요'); }
-    else { lib.addItem(d); }
+    else { toTop(); afterSheet(() => lib.addItem(d)); }
     setSheet(null); setEditing(null); setPrefill(undefined);
   };
 
@@ -153,27 +173,34 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar" data-scrolled={scrolled}>
         <button className="bar-btn" aria-label="서랍 목록 열기" aria-expanded={navOpen} onClick={() => setNavOpen(true)}><Menu strokeWidth={1.8} /></button>
-        <div className="topbar-title"><h1>{title}</h1>{lib.ready && <span className="num">{list.length}</span>}</div>
+        <button type="button" className="topbar-title" onClick={() => toTop()} aria-label={`${title}, 맨 위로`}><h1>{title}</h1>{lib.ready && <span className="num">{list.length}</span>}</button>
+        <div className="view-switch">
+          <SegmentedControl label="보기 방식" value={view} onChange={v => changeView(v as 'list' | 'card')} size="sm">
+            <SegmentedControlItem value="list" label="목록" isLabelHidden icon={<Rows3 size={17} strokeWidth={2} />} />
+            <SegmentedControlItem value="card" label="카드" isLabelHidden icon={<LayoutGrid size={17} strokeWidth={2} />} />
+          </SegmentedControl>
+        </div>
         <button className="bar-btn" aria-label="설정" onClick={() => setSheet('settings')}><Settings strokeWidth={1.8} /></button>
       </header>
 
-      <main className="content">
-        {(searching || q) && (
-          <div ref={searchRef}>
-            <TextInput label="검색" isLabelHidden placeholder="제목, 메모, 태그, 주소" type="search" value={q} onChange={setQ} startIcon={Search} size="lg" />
+      <main className="content" ref={scrollRef} onScroll={e => { const s = e.currentTarget.scrollTop > 2; if (s !== scrolled) setScrolled(s); }}>
+        <div className="content-inner">
+          <div className="search-reveal" data-open={searching || !!q} ref={searchRef} inert={!(searching || q)}>
+            <div>
+              <TextInput label="검색" isLabelHidden placeholder="제목, 메모, 태그, 주소" type="search" value={q} onChange={setQ} startIcon={Search} size="lg" />
+            </div>
           </div>
-        )}
-        {body}
+          {body}
+        </div>
       </main>
 
       <nav className="tabbar" aria-label="빠른 메뉴">
-        <button className="tab" aria-pressed={scope.type === 'all'} aria-label="전체" onClick={() => setScope({type: 'all'})}><Inbox strokeWidth={1.8} /></button>
-        <button className="tab" aria-pressed={scope.type === 'star'} aria-label="즐겨찾기" onClick={() => setScope({type: 'star'})}><Star strokeWidth={1.8} /></button>
-        <button className="tab" aria-pressed={searching} aria-label="검색" onClick={() => { if (searching) setQ(''); setSearching(s => !s); }}><Search strokeWidth={1.8} /></button>
-        <button className="tab" aria-pressed={view === 'list'} aria-label="목록으로 보기" onClick={() => setView('list')}><Rows3 strokeWidth={1.8} /></button>
-        <button className="tab" aria-pressed={view === 'card'} aria-label="카드로 보기" onClick={() => setView('card')}><LayoutGrid strokeWidth={1.8} /></button>
+        <button className="tab" aria-pressed={scope.type === 'all'} onClick={() => goto({type: 'all'})}><Inbox strokeWidth={1.8} /><span>전체</span></button>
+        <button className="tab" aria-pressed={scope.type === 'star'} onClick={() => goto({type: 'star'})}><Star strokeWidth={1.8} /><span>즐겨찾기</span></button>
+        <button className="tab" aria-pressed={searching} onClick={toggleSearch}><Search strokeWidth={1.8} /><span>검색</span></button>
+        <button className="tab" aria-expanded={navOpen} onClick={() => setNavOpen(true)}><Tray strokeWidth={1.8} /><span>서랍</span></button>
         <button className="fab" aria-label="추가" onClick={openAdd}><Plus strokeWidth={2.4} /></button>
       </nav>
 

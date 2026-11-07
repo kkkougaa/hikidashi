@@ -28,18 +28,26 @@
   --max: 640px;
   color-scheme: light dark;
 }
-html, body, #root { min-height: 100%; }
-body { margin: 0; background: var(--color-background-body); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+/* 앱 껍데기는 화면에 고정하고 목록만 스크롤한다.
+   그래야 iOS 에서 아래로 당겨도 상단바·탭바가 따라 내려오지 않는다 */
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+body { position: fixed; inset: 0; margin: 0; background: var(--color-background-body); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+#root { height: 100%; }
 .num { font-variant-numeric: tabular-nums; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* 넓은 화면에서도 폰 폭으로 */
-.app { max-width: var(--max); margin-inline: auto; min-height: 100dvh; background: var(--color-background-body); }
+.app { position: relative; display: flex; flex-direction: column; max-width: var(--max); height: 100%; margin-inline: auto; overflow: hidden; background: var(--color-background-body); }
 @media (min-width: 700px) { body { background: light-dark(#EEF1F5, #0B0C0E); } .app { box-shadow: 0 0 0 1px var(--line); } }
 
 /* ── 머리 바 ── */
-.topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 4px; padding: env(safe-area-inset-top, 0px) max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px)); min-height: 56px; background: var(--head); }
-.topbar-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; padding-inline: 6px; }
+.topbar { position: relative; z-index: 10; flex: none; display: flex; align-items: center; gap: 4px; padding: env(safe-area-inset-top, 0px) max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px)); min-height: 56px; background: var(--head); view-transition-name: topbar; -webkit-user-select: none; user-select: none; }
+/* 스크롤하면 iOS 처럼 바 아래에 얇은 선 */
+.topbar::after { content: ""; position: absolute; inset: auto 0 0; height: 1px; background: var(--line); opacity: 0; transition: opacity 200ms ease-out; }
+.topbar[data-scrolled="true"]::after { opacity: 1; }
+.topbar-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; padding-inline: 6px; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.topbar-title:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 8px; }
+.view-switch { flex: none; margin-inline-end: 2px; }
 .topbar-title h1 { margin: 0; font-size: 22px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-title .num { font-size: 18px; font-weight: 500; letter-spacing: 0.08em; color: var(--color-text-secondary); }
 .bar-btn { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border: 0; border-radius: 12px; background: none; color: var(--color-text-primary); cursor: pointer; }
@@ -47,7 +55,14 @@ body { margin: 0; background: var(--color-background-body); -webkit-font-smoothi
 .bar-btn:active { background: light-dark(rgba(0,0,0,.06), rgba(255,255,255,.08)); }
 .bar-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 
-.content { padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + 32px) max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 24px; }
+.content { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; scroll-padding-top: 8px; }
+.content-inner { padding: 16px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 24px; }
+/* 검색창은 높이를 펼치며 나타난다 */
+.search-reveal { display: grid; grid-template-rows: 0fr; opacity: 0; margin-bottom: -24px; transition: grid-template-rows 320ms cubic-bezier(.32,.72,0,1), opacity 200ms ease-out, margin-bottom 320ms cubic-bezier(.32,.72,0,1); }
+.search-reveal > div { min-height: 0; overflow: hidden; padding: 2px; }
+.search-reveal[data-open="true"] { grid-template-rows: 1fr; opacity: 1; margin-bottom: 0; }
+/* 길게 누를 때 iOS 링크 미리보기·글자 선택이 메뉴와 겹치지 않게 */
+.vt-row { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .loading { display: grid; place-items: center; min-height: 50dvh; }
 
 /* 진한 색 블록 */
@@ -83,10 +98,11 @@ body { margin: 0; background: var(--color-background-body); -webkit-font-smoothi
 @media (max-width: 340px) { .cards { grid-template-columns: minmax(0, 1fr); } }
 
 /* ── 하단 탭바 ── */
-.tabbar { position: fixed; z-index: 20; bottom: 0; left: 50%; translate: -50% 0; width: 100%; max-width: var(--max); display: flex; align-items: stretch; padding-bottom: env(safe-area-inset-bottom, 0px); padding-inline: max(4px, env(safe-area-inset-left, 0px)) 0; background: var(--color-background-body); border-top: 1px solid var(--line); }
-.tab { flex: 1; display: grid; place-items: center; min-height: var(--tab-h); border: 0; background: none; color: light-dark(#7B818A, #8A919B); cursor: pointer; }
-.tab svg { width: 26px; height: 26px; }
-.tab[aria-pressed="true"] { color: var(--color-text-primary); }
+.tabbar { position: relative; z-index: 20; flex: none; display: flex; align-items: stretch; padding-bottom: env(safe-area-inset-bottom, 0px); padding-inline: max(4px, env(safe-area-inset-left, 0px)) 0; background: var(--color-background-body); border-top: 1px solid var(--line); view-transition-name: tabbar; -webkit-user-select: none; user-select: none; }
+.tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: var(--tab-h); border: 0; background: none; color: light-dark(#7B818A, #8A919B); font: inherit; font-size: 11px; font-weight: 500; cursor: pointer; transition: color 150ms ease-out, scale 150ms ease-out; }
+.tab svg { width: 24px; height: 24px; transition: scale 200ms cubic-bezier(.32,.72,0,1); }
+.tab[aria-pressed="true"] svg { scale: 1.06; }
+.tab[aria-pressed="true"] { color: var(--color-text-accent); font-weight: 600; }
 .tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -6px; border-radius: 12px; }
 .fab { flex: none; display: grid; place-items: center; width: 64px; height: 64px; align-self: start; margin: -12px max(12px, env(safe-area-inset-right, 0px)) 0 4px; border: 0; border-radius: 6px; background: var(--color-accent); color: var(--color-on-accent); box-shadow: 0 6px 16px rgba(19, 102, 224, 0.3); cursor: pointer; transition: scale 150ms ease-out; }
 .fab svg { width: 30px; height: 30px; }
@@ -159,3 +175,16 @@ body { margin: 0; background: var(--color-background-body); -webkit-font-smoothi
 .fetch-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; color: var(--color-text-secondary); }
 .link-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 4px; border: 0; background: none; color: var(--color-text-accent); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .fetch-preview { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--color-text-secondary); }
+
+/* ── 화면 전환 (View Transitions) ── */
+::view-transition-group(*) { animation-duration: 340ms; animation-timing-function: cubic-bezier(.32,.72,0,1); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 200ms; }
+/* 새로 생긴 줄은 살짝 커지며 나타나고, 지운 줄은 줄어들며 사라진다 */
+::view-transition-new(*):only-child { animation: vt-enter 320ms cubic-bezier(.32,.72,0,1) both; }
+::view-transition-old(*):only-child { animation: vt-exit 220ms ease-in both; }
+@keyframes vt-enter { from { opacity: 0; transform: scale(.96) translateY(-6px); } }
+@keyframes vt-exit { to { opacity: 0; transform: scale(.94); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  .search-reveal, .topbar::after, .tab, .tab svg { transition: none; }
+}
