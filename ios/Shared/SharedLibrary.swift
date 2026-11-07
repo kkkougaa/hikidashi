@@ -37,6 +37,21 @@ enum ShareInbox {
     struct Entry: Codable {
         var draft: ItemDraftData
         var sharedAt: Millis
+        /// nil: 기본 서랍, "none": 미분류, 그 밖: 서랍 id
+        var folderChoice: String?
+        var tags: [String]?
+    }
+
+    /// 공유 화면에서 고를 수 있게 앱이 적어 두는 서랍·태그 목록
+    struct Context: Codable, Equatable {
+        struct FolderInfo: Codable, Equatable, Identifiable {
+            var id: String
+            var name: String
+            var hex: String
+        }
+        var folders: [FolderInfo]
+        var tags: [String]
+        var defaultFolderId: String?
     }
 
     /// ItemDraft 를 그대로 담는 저장용 모양
@@ -72,13 +87,46 @@ enum ShareInbox {
     }
 
     @discardableResult
-    static func put(_ d: ItemDraft) -> Bool {
-        guard let data = try? JSONEncoder().encode(Entry(draft: ItemDraftData(d), sharedAt: .now)) else { return false }
+    static func put(_ d: ItemDraft, folderChoice: String? = nil, tags: [String] = []) -> Bool {
+        guard let data = try? JSONEncoder().encode(Entry(draft: ItemDraftData(d), sharedAt: .now, folderChoice: folderChoice, tags: tags)) else { return false }
         var q = base()
         q[kSecAttrAccount as String] = UUID().uuidString
         q[kSecValueData as String] = data
         q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         return SecItemAdd(q as CFDictionary, nil) == errSecSuccess
+    }
+
+    private static let contextAccount = "context"
+
+    private static func contextQuery() -> [String: Any] {
+        var q = base()
+        q[kSecAttrService as String] = service + ".context"
+        q[kSecAttrAccount as String] = contextAccount
+        return q
+    }
+
+    private static var lastContext: Context?
+
+    /// 앱이 바뀐 서랍·태그를 적어 둔다 (같으면 건너뜀)
+    static func writeContext(_ c: Context) {
+        guard c != lastContext, let data = try? JSONEncoder().encode(c) else { return }
+        lastContext = c
+        let q = contextQuery()
+        if SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecItemNotFound {
+            var add = q
+            add[kSecValueData as String] = data
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            SecItemAdd(add as CFDictionary, nil)
+        }
+    }
+
+    static func readContext() -> Context? {
+        var q = contextQuery()
+        q[kSecReturnData as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
+        return try? JSONDecoder().decode(Context.self, from: data)
     }
 
     /// 쌓인 것을 꺼내고 비운다 (오래된 것부터)

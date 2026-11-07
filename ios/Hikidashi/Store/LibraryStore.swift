@@ -26,6 +26,12 @@ struct WebPage: Identifiable {
     var id: String { url.absoluteString }
 }
 
+/// 리더 모드로 볼 항목
+struct ReaderRequest: Identifiable {
+    let item: Item
+    var id: String { item.id }
+}
+
 /// 앱 전체 상태. 저장은 앱 폴더의 JSON 파일 하나 (백업과 같은 형식이라 그대로 내보낼 수 있다)
 @MainActor
 @Observable
@@ -36,6 +42,10 @@ final class LibraryStore {
     var editor: EditorRequest?
     var memoID: String?
     var webPage: WebPage?
+    var reader: ReaderRequest?
+    /// 여러 개 고르는 중이면 고른 항목 id (nil 이면 고르는 중 아님)
+    var selection: Set<String>?
+    private var articles: [String: ReaderArticle] = [:]
 
     private let fileURL: URL
     private let fetcher = PageInfoFetcher()
@@ -54,18 +64,31 @@ final class LibraryStore {
 
     private func save() {
         do { try SharedLibrary.save(library, to: fileURL) } catch { show("저장하지 못했어요: \(error.localizedDescription)", error: true) }
+        // 공유 화면에서 고를 수 있게 서랍·태그 목록을 넘겨 둔다
+        ShareInbox.writeContext(.init(
+            folders: library.liveFolders.map { .init(id: $0.id, name: $0.name, hex: $0.color.hex) },
+            tags: Array(library.tagsByUse.prefix(30)),
+            defaultFolderId: defaultFolderId
+        ))
     }
 
     /// 앱으로 돌아올 때: 공유 시트로 넣은 항목을 꺼내 기본 서랍에 넣는다
     func drainShareInbox() {
         let entries = ShareInbox.drain()
         guard !entries.isEmpty else { return }
-        let folder = defaultFolderId
+        let fallback = defaultFolderId
         var added = 0
-        change {
+        change { lib in
             for e in entries {
-                if let u = e.draft.url, $0.contains(url: u) { continue }
-                $0.addItem(e.draft.draft(folderId: folder), now: e.sharedAt)
+                if let u = e.draft.url, lib.contains(url: u) { continue }
+                let folder: String? = switch e.folderChoice {
+                case nil: fallback
+                case .some("none"): nil
+                case let id?: lib.folder(id) != nil ? id : fallback
+                }
+                var d = e.draft.draft(folderId: folder)
+                d.tags = (e.tags ?? []).map(normalizeTag).filter { !$0.isEmpty }
+                lib.addItem(d, now: e.sharedAt)
                 added += 1
             }
         }
@@ -133,7 +156,74 @@ final class LibraryStore {
     // MARK: 항목
 
     func open(_ item: Item) {
-        if item.kind == .link, let s = item.url, let url = URL(string: s) { webPage = WebPage(url: url) } else { memoID = item.id }
+        guard item.kind == .link, let s = item.url, let url = URL(string: s) else { memoID = item.id; return }
+        // 설정에서 "리더 모드 먼저" 면 글은 리더로, X·유튜브는 원래 화면으로
+        if UserDefaults.standard.string(forKey: "linkOpen") != "safari", supportsReader(s) {
+            reader = ReaderRequest(item: item)
+        } else {
+            webPage = WebPage(url: url)
+        }
+    }
+
+    func openInSafari(_ item: Item) {
+        if let s = item.url, let url = URL(string: s) { webPage = WebPage(url: url) }
+    }
+
+    /// 리더 본문 (한 번 받은 건 기억한다)
+    func article(for url: String) async -> ReaderArticle? {
+        if let a = articles[url] { return a }
+        let a = await fetcher.fetchArticle(url)
+        if let a { articles[url] = a }
+        return a
+    }
+
+    // MARK: 여러 개 고르기
+
+    func startSelecting(_ first: Item? = nil) {
+        withAnimation(.snappy) { selection = first.map { [$0.id] } ?? [] }
+    }
+
+    func stopSelecting() { withAnimation(.snappy) { selection = nil } }
+
+    func toggleSelected(_ item: Item) {
+        guard var s = selection else { return }
+        if s.contains(item.id) { s.remove(item.id) } else { s.insert(item.id) }
+        selection = s
+    }
+
+    /// 고른 항목에 한꺼번에 하고, 되돌리기를 띄운다
+    private func bulk(_ message: String, _ body: (inout Library, String) -> Void) {
+        guard let ids = selection, !ids.isEmpty else { return }
+        let before = library
+        change { lib in for id in ids { body(&lib, id) } }
+        stopSelecting()
+        show(message) { [weak self] in self?.change { $0 = before } }
+    }
+
+    func moveSelected(to folderId: String?) {
+        let n = selection?.count ?? 0
+        let name = folder(folderId)?.name ?? "미분류"
+        bulk("\(n)개를 ‘\(name)’ 로 옮겼어요") { lib, id in lib.update(id) { $0.folderId = folderId } }
+    }
+
+    func tagSelected(_ raw: String) {
+        let tags = parseTags(raw.replacingOccurrences(of: " ", with: ","))
+        guard !tags.isEmpty else { return }
+        let n = selection?.count ?? 0
+        bulk("\(n)개에 \(tags.map { "#\($0)" }.joined(separator: " ")) 달았어요") { lib, id in
+            lib.update(id) { it in for t in tags where !it.tags.contains(t) { it.tags.append(t) } }
+        }
+    }
+
+    func starSelected() {
+        guard let ids = selection else { return }
+        let all = ids.allSatisfy { library.item($0)?.starred == true }
+        bulk(all ? "즐겨찾기에서 뺐어요" : "즐겨찾기에 넣었어요") { lib, id in lib.update(id) { $0.starred = !all } }
+    }
+
+    func removeSelected() {
+        let n = selection?.count ?? 0
+        bulk("\(n)개 삭제함") { lib, id in lib.remove(id) }
     }
 
     func add(_ d: ItemDraft) { change { $0.addItem(d) } }

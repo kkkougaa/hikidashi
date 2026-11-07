@@ -263,3 +263,52 @@ final class FixtureExport: XCTestCase {
         try lib.backup(now: 1_762_500_000_000).encoded().write(to: URL(fileURLWithPath: path))
     }
 }
+
+final class ReaderTests: XCTestCase {
+    let html = """
+    <html><head><title>CSS 그리드 완전 정복 | 개발 블로그</title>
+    <meta property="og:image" content="https://ex.com/hero.jpg"><meta property="og:site_name" content="개발 블로그"></head>
+    <body><header><a href="/">홈</a></header>
+    <nav><ul><li><a href="/a">메뉴 하나</a></li></ul></nav>
+    <article>
+      <h1>CSS 그리드 완전 정복</h1>
+      <p>그리드는 <b>두 방향</b>으로 배치하는 레이아웃 방식이다. 줄과 칸을 한 번에 다룰 수 있어서 편하다.</p>
+      <img src="https://ex.com/hero.jpg">
+      <p><img data-src="/img/diagram.png" src="data:image/gif;base64,AAA">트랙의 크기는 fr 단위로 나눈다.<br>여러 줄도 된다 &amp; 좋다.</p>
+      <h2>예제</h2>
+      <pre><code>.grid {
+      display: grid;
+    }</code></pre>
+      <blockquote><p>인용문입니다</p></blockquote>
+      <ul><li>첫째 항목</li><li><a href="/x">관련 글 링크만 있는 줄</a></li></ul>
+      <script>var x = "<p>스크립트</p>";</script>
+      <p>공유하기</p>
+    </article>
+    <footer><p>© 회사</p></footer></body></html>
+    """
+
+    func testExtractArticle() {
+        let a = extractArticle(html, url: "https://ex.com/post/1")
+        XCTAssertEqual(a.title, "CSS 그리드 완전 정복")
+        XCTAssertEqual(a.image, "https://ex.com/hero.jpg")
+        XCTAssertEqual(a.blocks, [
+            .paragraph("그리드는 두 방향으로 배치하는 레이아웃 방식이다. 줄과 칸을 한 번에 다룰 수 있어서 편하다."),
+            .paragraph("트랙의 크기는 fr 단위로 나눈다.\n여러 줄도 된다 & 좋다."),
+            .image("https://ex.com/img/diagram.png"),
+            .heading("예제", level: 2),
+            .code(".grid {\n  display: grid;\n}"),
+            .quote("인용문입니다"),
+            .listItem("첫째 항목"),
+        ])
+        XCTAssertEqual(a.minutes, 1)
+    }
+
+    func testReaderURLAndSupport() {
+        XCTAssertEqual(readerURL("https://blog.naver.com/abc/223"), "https://m.blog.naver.com/abc/223")
+        XCTAssertEqual(readerURL("https://ex.com/a"), "https://ex.com/a")
+        XCTAssertTrue(supportsReader("https://ex.com/a"))
+        XCTAssertFalse(supportsReader("https://x.com/elonmusk/status/1585341984679469056"))
+        XCTAssertFalse(supportsReader("https://youtu.be/jNQXAC9IVRw"))
+        XCTAssertFalse(supportsReader(nil))
+    }
+}

@@ -7,6 +7,8 @@ struct ItemsScreen: View {
     var onMenu: () -> Void = {}
     @Environment(LibraryStore.self) private var store
     @State private var query = ""
+    @State private var tagging = false
+    @State private var tagText = ""
     @AppStorage("viewMode") private var viewMode = "list"
 
     private var showFolder: Bool {
@@ -25,22 +27,76 @@ struct ItemsScreen: View {
                 list(items)
             }
         }
-        .navigationTitle(store.title(of: scope))
+        .navigationTitle(store.selection.map { $0.isEmpty ? "항목 고르기" : "\($0.count)개 선택" } ?? store.title(of: scope))
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "제목, 메모, 태그, 주소")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: onMenu) { Image(systemName: "sidebar.left") }
-                    .accessibilityLabel("서랍 열기")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Picker("보기 방식", selection: $viewMode.animation(.snappy)) {
-                    Image(systemName: "list.bullet").accessibilityLabel("목록").tag("list")
-                    Image(systemName: "square.grid.2x2").accessibilityLabel("카드").tag("grid")
+            if let sel = store.selection {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("완료") { store.stopSelecting() }.fontWeight(.semibold)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 100)
+                ToolbarItem(placement: .topBarTrailing) {
+                    let all = Set(items.map(\.id))
+                    Button(sel == all && !all.isEmpty ? "선택 해제" : "모두 선택") {
+                        store.selection = sel == all ? [] : all
+                    }
+                }
+            } else {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onMenu) { Image(systemName: "sidebar.left") }
+                        .accessibilityLabel("서랍 열기")
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { store.startSelecting() } label: { Image(systemName: "checkmark.circle") }
+                        .accessibilityLabel("여러 개 고르기")
+                        .disabled(items.isEmpty)
+                    Picker("보기 방식", selection: $viewMode.animation(.snappy)) {
+                        Image(systemName: "list.bullet").accessibilityLabel("목록").tag("list")
+                        Image(systemName: "square.grid.2x2").accessibilityLabel("카드").tag("grid")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 100)
+                }
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            if let sel = store.selection {
+                selectionBar(sel).transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .alert("태그 달기", isPresented: $tagging) {
+            TextField("태그 (띄어 쓰면 여러 개)", text: $tagText).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button("달기") { store.tagSelected(tagText); tagText = "" }
+            Button("취소", role: .cancel) { tagText = "" }
+        } message: { Text("고른 항목에 태그를 더해요. 이미 있는 태그는 그대로예요.") }
+    }
+
+    /// 고르는 중일 때 아래에 뜨는 버튼 줄: 옮기기, 태그, 즐겨찾기, 삭제
+    private func selectionBar(_ sel: Set<String>) -> some View {
+        let none = sel.isEmpty
+        return HStack(spacing: 0) {
+            Menu {
+                ForEach(store.folders) { f in
+                    Button { store.moveSelected(to: f.id) } label: { Label(f.name, systemImage: "folder.fill") }
+                }
+                Button { store.moveSelected(to: nil) } label: { Label("미분류", systemImage: "archivebox") }
+            } label: { barLabel("옮기기", "folder") }
+            Button { tagging = true } label: { barLabel("태그", "number") }
+            Button { store.starSelected() } label: { barLabel("즐겨찾기", "star") }
+            Button(role: .destructive) { store.removeSelected() } label: { barLabel("삭제", "trash").foregroundStyle(none ? Color.secondary : Color.red) }
+        }
+        .disabled(none)
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .modifier(GlassCapsule())
+        .padding(.horizontal, 16).padding(.bottom, 8)
+    }
+
+    private func barLabel(_ title: String, _ icon: String) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 18, weight: .semibold))
+            Text(title).font(.caption2.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .contentShape(.rect)
     }
 
     @ViewBuilder private var empty: some View {
@@ -63,7 +119,7 @@ struct ItemsScreen: View {
             ForEach(sections(items), id: \.0) { bucket, group in
                 Section {
                     ForEach(group) { item in
-                        ItemRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id))
+                        ItemRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id), selected: store.selection.map { $0.contains(item.id) })
                             .itemActions(item, store: store)
                     }
                 } header: {
@@ -95,7 +151,7 @@ struct ItemsScreen: View {
                 ForEach(0..<2, id: \.self) { c in
                     LazyVStack(spacing: 10) {
                         ForEach(cols[c]) { item in
-                            ItemCard(item: item, folder: store.folder(item.folderId), showFolder: showFolder)
+                            ItemCard(item: item, folder: store.folder(item.folderId), showFolder: showFolder, selected: store.selection.map { $0.contains(item.id) })
                                 .itemActions(item, store: store, swipe: false)
                         }
                     }
@@ -115,10 +171,13 @@ struct ItemRow: View {
     let folder: Folder?
     let showFolder: Bool
     var loading = false
+    /// nil: 고르는 중 아님
+    var selected: Bool? = nil
     @Environment(LibraryStore.self) private var store
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
+            if let selected { SelectMark(on: selected).transition(.move(edge: .leading).combined(with: .opacity)) }
             ItemIcon(item: item, folder: folder)
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.displayTitle).font(.body.weight(.semibold)).lineLimit(1)
@@ -144,6 +203,7 @@ struct ItemCard: View {
     let item: Item
     let folder: Folder?
     let showFolder: Bool
+    var selected: Bool? = nil
     @Environment(LibraryStore.self) private var store
     @State private var coverFailed = false
 
@@ -183,7 +243,9 @@ struct ItemCard: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(.rect(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.primary.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(selected == true ? Color.brand : .primary.opacity(0.07), lineWidth: selected == true ? 2.5 : 1))
+        .overlay(alignment: .topLeading) { if let selected { SelectMark(on: selected).padding(8) } }
+        .scaleEffect(selected == true ? 0.97 : 1)
         .contentShape(.rect(cornerRadius: 18))
     }
 
@@ -215,12 +277,28 @@ private struct ItemActions: ViewModifier {
     let swipe: Bool
 
     func body(content: Content) -> some View {
+        if store.selection != nil {
+            // 고르는 중엔 누르면 고르기만
+            Button { withAnimation(.snappy(duration: 0.2)) { store.toggleSelected(item) } } label: { content }
+                .buttonStyle(.plain)
+                .sensoryFeedback(.selection, trigger: store.selection?.contains(item.id))
+        } else {
+            normal(content)
+        }
+    }
+
+    @ViewBuilder private func normal(_ content: Content) -> some View {
         let base = Button { store.open(item) } label: { content }
             .buttonStyle(.plain)
             .contextMenu {
                 Button { store.toggleStar(item) } label: { Label(item.starred ? "즐겨찾기 해제" : "즐겨찾기", systemImage: item.starred ? "star.slash" : "star") }
                 Button { store.editor = EditorRequest(editing: item) } label: { Label("편집", systemImage: "pencil") }
+                Button { store.startSelecting(item) } label: { Label("여러 개 고르기", systemImage: "checkmark.circle") }
                 if item.kind == .link {
+                    if supportsReader(item.url) {
+                        Button { store.reader = ReaderRequest(item: item) } label: { Label("리더로 보기", systemImage: "doc.plaintext") }
+                    }
+                    Button { store.openInSafari(item) } label: { Label("사파리로 열기", systemImage: "safari") }
                     Button { store.copyURL(item) } label: { Label("주소 복사", systemImage: "doc.on.doc") }
                     if let s = item.url, let url = URL(string: s) { ShareLink(item: url) { Label("공유", systemImage: "square.and.arrow.up") } }
                 }
@@ -239,5 +317,18 @@ private struct ItemActions: ViewModifier {
         } else {
             base
         }
+    }
+}
+
+/// 고르기 동그라미
+struct SelectMark: View {
+    let on: Bool
+    var body: some View {
+        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(on ? Color.brand : Color.secondary)
+            .background(Circle().fill(Color(.systemBackground)).padding(2))
+            .contentTransition(.symbolEffect(.replace))
+            .accessibilityLabel(on ? "선택됨" : "선택 안 됨")
     }
 }

@@ -83,4 +83,25 @@ final class ScreenshotTests: XCTestCase {
         app.buttons["되돌리기"].tap()
         XCTAssertTrue(app.staticTexts["CSS 그리드 레이아웃"].waitForExistence(timeout: 3), "되돌리면 다시 보여야 한다")
     }
+
+    func testSelectAndReader() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["장보기"].waitForExistence(timeout: 10))
+
+        // 여러 개 골라 즐겨찾기
+        app.buttons["여러 개 고르기"].firstMatch.tap()
+        app.staticTexts["CSS 그리드 레이아웃"].firstMatch.tap()
+        app.staticTexts["Me at the zoo"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["2개 선택"].waitForExistence(timeout: 3), "두 개가 골라져야 한다")
+        snap("09-select")
+        app.buttons["즐겨찾기"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["되돌리기"].waitForExistence(timeout: 3))
+
+        // 글 링크는 리더 모드로 열린다
+        app.staticTexts["CSS 그리드 레이아웃"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["리더 닫기"].waitForExistence(timeout: 5), "리더가 열려야 한다")
+        sleep(6) // 본문 받기
+        snap("10-reader")
+        app.buttons["리더 닫기"].tap()
+    }
 }

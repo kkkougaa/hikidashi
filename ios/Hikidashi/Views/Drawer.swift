@@ -13,10 +13,21 @@ struct DrawerView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                Text("hikidashi")
-                    .font(.title2.weight(.bold))
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 14)
+                HStack {
+                    Text("hikidashi").font(.title2.weight(.bold))
+                    Spacer()
+                    Button(action: onSettings) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 40, height: 40)
+                            .background(Color(.tertiarySystemFill), in: .circle)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("설정")
+                }
+                .padding(.leading, 12).padding(.trailing, 4)
+                .padding(.bottom, 14)
 
                 row(.all, "전체", icon: "tray.fill", color: .brand, count: store.allItems.count)
                 row(.starred, "즐겨찾기", icon: "star.fill", color: FolderColor.mustard.color, count: store.allItems.filter(\.starred).count)
@@ -53,17 +64,6 @@ struct DrawerView: View {
             .padding(.bottom, 20)
         }
         .scrollIndicators(.hidden)
-        .safeAreaInset(edge: .bottom) {
-            Button(action: onSettings) {
-                Label("설정", systemImage: "gearshape").font(.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14).frame(height: 48)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .background(.bar)
-            .overlay(alignment: .top) { Divider() }
-        }
         .sheet(item: $editing) { FolderEditor(folder: $0.folder) }
     }
 
@@ -109,6 +109,7 @@ struct SettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("viewMode") private var viewMode = "list"
+    @AppStorage("linkOpen") private var linkOpen = "reader"
     @AppStorage(SharedLibrary.defaultFolderKey) private var defaultFolder = ""
     @AppStorage("lastBackupAt") private var lastBackup: Double = 0
     @State private var backupURL: URL?
@@ -128,6 +129,12 @@ struct SettingsScreen: View {
                         Text("카드").tag("grid")
                     }
                 }
+                Section {
+                    Picker("링크를 누르면", selection: $linkOpen) {
+                        Text("리더 모드").tag("reader")
+                        Text("사파리").tag("safari")
+                    }
+                } footer: { Text("리더 모드는 광고와 메뉴 없이 본문만 보여줘요. X 와 유튜브는 늘 원래 화면으로 열어요. 길게 누르면 둘 다 고를 수 있어요.") }
                 Section {
                     Picker("기본 서랍", selection: $defaultFolder) {
                         Text("첫 번째 서랍").tag("")

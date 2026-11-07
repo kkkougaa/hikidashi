@@ -41,12 +41,15 @@ struct RootView: View {
                     ItemsScreen(scope: scope, onMenu: { setDrawer(true) }).id(scope)
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    PullAddButton(
-                        onTap: { store.editor = EditorRequest() },
-                        onPull: { store.quickAddFromPasteboard(into: currentFolderId) }
-                    )
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 12)
+                    if store.selection == nil {
+                        PullAddButton(
+                            onTap: { store.editor = EditorRequest() },
+                            onPull: { store.quickAddFromPasteboard(into: currentFolderId) }
+                        )
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 12)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    }
                 }
 
                 // 서랍이 열리면 뒤를 어둡게, 누르면 닫힘
@@ -57,6 +60,7 @@ struct RootView: View {
                     .gesture(closeDrag(width))
 
                 DrawerView(selected: scope, onSelect: { s in
+                    store.stopSelecting()
                     scope = s
                     setDrawer(false)
                 }, onSettings: {
@@ -73,7 +77,7 @@ struct RootView: View {
                 .accessibilityHidden(!drawerOpen)
 
                 // 왼쪽 가장자리에서 밀면 서랍이 따라 나온다
-                if !drawerOpen {
+                if !drawerOpen, store.selection == nil {
                     Color.clear
                         .frame(width: 22)
                         .contentShape(.rect)
@@ -106,6 +110,7 @@ struct RootView: View {
             if let m = store.item(store.memoID) { MemoDetail(item: m) }
         }
         .sheet(isPresented: $settingsOpen) { SettingsScreen() }
+        .sheet(item: $store.reader) { ReaderView(item: $0.item) }
         .fullScreenCover(item: $store.webPage) { SafariView(url: $0.url).ignoresSafeArea() }
         .preferredColorScheme(Appearance(rawValue: appearance)?.scheme)
         .onChange(of: scenePhase) { _, phase in if phase == .active { store.drainShareInbox() } }
