@@ -64,7 +64,9 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.buttons["설정 닫기"].waitForExistence(timeout: 5))
         sleep(1)
         snap("06-settings")
-        app.buttons["태그 관리"].firstMatch.tap()
+        // 줄 이름이 "태그 관리, 5개" 처럼 개수와 합쳐져 읽힌다
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH '태그 관리'")).firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["태그 관리"].waitForExistence(timeout: 3))
         sleep(1)
         snap("08-tags")
     }
