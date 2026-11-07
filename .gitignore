@@ -11,3 +11,4 @@ ios/HikidashiCore/.swiftpm/
 *.xcresult
 xcuserdata/
 DerivedData/
+dist-ipa/
