@@ -53,8 +53,22 @@ jobs:
         if: steps.check.outputs.ready == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/keys"
-          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/keys/AuthKey.p8"
-          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
+          KEY="$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+          # .p8 내용을 그대로 넣었어도, base64 로 바꿔 넣었어도 받아준다
+          if printf '%s' "$ASC_KEY_P8_BASE64" | grep -q "BEGIN PRIVATE KEY"; then
+            printf '%s\n' "$ASC_KEY_P8_BASE64" | tr -d '\r' > "$KEY"
+            echo "키 형식: p8 원문"
+          else
+            printf '%s' "$ASC_KEY_P8_BASE64" | tr -d ' \r\n' | base64 --decode > "$KEY" || true
+            echo "키 형식: base64"
+          fi
+          # 값은 찍지 않고 모양만 확인
+          if ! grep -q "BEGIN PRIVATE KEY" "$KEY" || ! grep -q "END PRIVATE KEY" "$KEY"; then
+            echo "::error::ASC_KEY_P8_BASE64 를 풀었는데 .p8 키 모양이 아니다 (BEGIN/END PRIVATE KEY 줄이 없음). 파일 전체를 다시 넣어줘"
+            exit 1
+          fi
+          echo "키 줄 수: $(wc -l < "$KEY")"
+          echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
       - name: 프로젝트 만들기
         if: steps.check.outputs.ready == 'true'
         run: |
