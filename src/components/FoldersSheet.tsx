@@ -1,10 +1,8 @@
 import {useState} from 'react';
-import {Check, ChevronLeft, ChevronRight, Plus, Trash2} from 'lucide-react';
+import {Check, ChevronLeft, ChevronRight, Plus} from 'lucide-react';
 import {BottomSheet} from '@astryxdesign/core/BottomSheet';
-import {TextInput} from '@astryxdesign/core/TextInput';
-import {Button} from '@astryxdesign/core/Button';
 import {COLORS, COLOR_NAMES, type ColorKey, type Folder} from '../data/types';
-import {cssVar, SheetHead} from './bits';
+import {ConfirmButton, cssVar, SheetHead} from './bits';
 
 type Mode = {type: 'list'} | {type: 'edit'; folder: Folder | null};
 
@@ -71,31 +69,32 @@ function FolderForm({folder, count, taken, onBack, onSave, onRemove}: {
     onSave(n, color);
   };
   return (
-    <form noValidate onSubmit={e => { e.preventDefault(); submit(); }}>
-      <div className="sheet-head">
-        <button type="button" className="round-btn start" aria-label="서랍 목록으로" onClick={onBack}><ChevronLeft strokeWidth={1.8} /></button>
-        <h2>{folder ? '서랍 수정' : '새 서랍'}</h2>
+    <form noValidate onSubmit={e => { e.preventDefault(); submit(); }} className="sheet-form">
+      <div className="sheet-bar">
+        <button type="button" className="round-btn" aria-label="서랍 목록으로" onClick={onBack}><ChevronLeft strokeWidth={1.8} /></button>
+        <div className="sheet-bar-center"><h2 className="sheet-title">{folder ? '서랍 수정' : '새 서랍'}</h2></div>
+        <div className="sheet-bar-end"><ConfirmButton label={folder ? '변경 사항 저장' : '서랍 만들기'} /></div>
       </div>
-      <div className="form-stack">
-        <TextInput label="이름" placeholder="예: 여행 계획" value={name} size="lg" onChange={v => { setName(v); setErr(null); }}
-          status={err ? {type: 'error', message: err} : undefined} />
-        <div>
-          <p className="set-label" id="color-label">색</p>
-          <div className="swatches" role="radiogroup" aria-labelledby="color-label">
-            {(Object.keys(COLORS) as ColorKey[]).map(k => (
-              <button key={k} type="button" role="radio" aria-checked={color === k} aria-label={COLOR_NAMES[k]}
-                className="swatch" style={cssVar(COLORS[k])} onClick={() => setColor(k)}>
-                {color === k && <Check strokeWidth={2.6} aria-hidden="true" />}
-              </button>
-            ))}
-          </div>
-        </div>
-        {folder && count > 0 && <p className="set-label" style={{fontWeight: 400}}>서랍을 지우면 안의 항목 {count}개는 미분류로 옮겨져요.</p>}
-        <div className={folder ? 'sheet-actions split' : 'sheet-actions'}>
-          {folder && <Button label="서랍 삭제" variant="ghost" size="lg" icon={<Trash2 size={18} />} onClick={onRemove} />}
-          <Button label={folder ? '변경 사항 저장' : '서랍 만들기'} variant="primary" size="lg" type="submit" />
+      <input className="big-input" value={name} placeholder="서랍 이름" aria-label="이름" aria-invalid={!!err} aria-describedby="folder-err"
+        onChange={e => { setName(e.target.value); setErr(null); }} />
+      <p id="folder-err" className="form-hint" aria-live="polite">{err && <span className="err">{err}</span>}</p>
+      <div className="form-group">
+        <p className="form-row-label" id="color-label">색</p>
+        <div className="swatches" role="radiogroup" aria-labelledby="color-label">
+          {(Object.keys(COLORS) as ColorKey[]).map(k => (
+            <button key={k} type="button" role="radio" aria-checked={color === k} aria-label={COLOR_NAMES[k]}
+              className="swatch" style={cssVar(COLORS[k])} onClick={() => setColor(k)}>
+              {color === k && <Check strokeWidth={2.6} aria-hidden="true" />}
+            </button>
+          ))}
         </div>
       </div>
+      {folder && (
+        <>
+          <button type="button" className="danger-btn" onClick={onRemove}>서랍 삭제</button>
+          {count > 0 && <p className="form-hint center">안의 항목 {count}개는 미분류로 옮겨져요</p>}
+        </>
+      )}
     </form>
   );
 }

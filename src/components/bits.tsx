@@ -1,5 +1,5 @@
 import {useState, type CSSProperties, type ReactNode} from 'react';
-import {StickyNote, X} from 'lucide-react';
+import {Check, StickyNote, X} from 'lucide-react';
 import {COLORS, type Folder, type Item} from '../data/types';
 import {domainOf} from '../lib/format';
 import {logoUrl} from '../lib/pageInfo';
@@ -64,12 +64,28 @@ export function Meta({item, folder, showFolder}: {item: Item; folder?: Folder | 
   );
 }
 
+/**
+ * 시트 머리: 왼쪽 동그란 닫기, 가운데(제목이나 전환 알약), 오른쪽(✓ 저장이나 동작 묶음).
+ * 캘린더 앱처럼 저장 버튼을 아래에 따로 두지 않는다.
+ */
+export function SheetBar({onClose, closeLabel, center, end}: {onClose: () => void; closeLabel: string; center?: ReactNode; end?: ReactNode}) {
+  return (
+    <div className="sheet-bar">
+      <button type="button" className="round-btn" aria-label={closeLabel} onClick={onClose}><X strokeWidth={1.8} /></button>
+      <div className="sheet-bar-center">{center}</div>
+      <div className="sheet-bar-end">{end}</div>
+    </div>
+  );
+}
+
+/** 오른쪽 위 동그란 ✓ (폼 제출) */
+export function ConfirmButton({label}: {label: string}) {
+  return <button type="submit" className="round-btn confirm" aria-label={label}><Check strokeWidth={2} /></button>;
+}
+
+/** 예전 머리 모양: 가운데 제목 + 오른쪽 닫기 */
 export function SheetHead({title, onClose, closeLabel, start}: {title: string; onClose: () => void; closeLabel: string; start?: ReactNode}) {
   return (
-    <div className="sheet-head">
-      {start}
-      <h2>{title}</h2>
-      <button type="button" className="round-btn end" aria-label={closeLabel} onClick={onClose}><X strokeWidth={1.8} /></button>
-    </div>
+    <SheetBar onClose={onClose} closeLabel={closeLabel} center={<h2 className="sheet-title">{title}</h2>} end={start} />
   );
 }

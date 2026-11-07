@@ -68,6 +68,8 @@ export function App() {
     if (shared) { setPrefill(shared); setEditing(null); setSheet('item'); }
   }, [lib.ready]);
 
+  // 즐겨찾기처럼 시트를 연 채로 바뀐 값을 바로 보여 주려고 최신 항목을 다시 찾는다
+  const memoLive = memo ? lib.items.find(i => i.id === memo.id) ?? null : null;
   const folderMap = useMemo(() => new Map(lib.folders.map(f => [f.id, f])), [lib.folders]);
   // 지워진 서랍을 보고 있었다면 전체로
   useEffect(() => { if (scope.type === 'folder' && lib.ready && !folderMap.has(scope.id)) setScope({type: 'all'}); }, [scope, folderMap, lib.ready]);
@@ -228,7 +230,7 @@ export function App() {
 
       <ItemSheet isOpen={sheet === 'item'} onClose={() => { setSheet(null); setEditing(null); setPrefill(undefined); }}
         editing={editing} prefill={prefill} folders={lib.folders} defaultFolderId={defaultFolderId} allTags={allTags} onSave={save} />
-      <MemoSheet item={memo} folder={memo?.folderId ? folderMap.get(memo.folderId) : undefined} onClose={() => setMemo(null)} onEdit={act.edit} onRemove={act.remove} />
+      <MemoSheet item={memoLive} folder={memoLive?.folderId ? folderMap.get(memoLive.folderId) : undefined} onClose={() => setMemo(null)} onEdit={act.edit} onRemove={act.remove} onStar={act.toggleStar} />
       <FoldersSheet isOpen={sheet === 'folders'} onClose={() => setSheet(null)} folders={lib.folders} counts={counts}
         onAdd={(n, c) => { lib.addFolder(n, c); notify(`‘${n}’ 서랍을 만들었어요`); }}
         onUpdate={(id, p) => lib.updateFolder(id, p)} onRemove={removeFolder} />
