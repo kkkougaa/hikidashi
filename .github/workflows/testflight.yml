@@ -69,6 +69,33 @@ jobs:
           fi
           echo "키 줄 수: $(wc -l < "$KEY")"
           echo "ASC_KEY_PATH=$KEY" >> "$GITHUB_ENV"
+      - name: 번들 ID 등록 (App Store Connect 에 앱을 만들 수 있게)
+        if: steps.check.outputs.ready == 'true'
+        # 권한(capability)이 없는 앱은 Xcode 가 와일드카드 프로필(*)로 서명해서 번들 ID 를 따로 등록하지 않는다.
+        # 그래서 API 로 직접 등록한다. 이미 있으면 그냥 넘어간다.
+        run: |
+          python3 -m pip install --quiet --break-system-packages pyjwt cryptography 2>/dev/null || python3 -m pip install --quiet pyjwt cryptography
+          python3 - <<'PY'
+          import json, os, time, urllib.request, urllib.error
+          import jwt
+          key = open(os.environ["ASC_KEY_PATH"]).read()
+          now = int(time.time())
+          token = jwt.encode({"iss": os.environ["ASC_ISSUER_ID"], "iat": now, "exp": now + 600, "aud": "appstoreconnect-v1"},
+                             key, algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"], "typ": "JWT"})
+          h = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+          bid = "com.kkkougaa.hikidashi"
+          q = urllib.request.Request("https://api.appstoreconnect.apple.com/v1/bundleIds?filter[identifier]=" + bid, headers=h)
+          found = [d for d in json.load(urllib.request.urlopen(q))["data"] if d["attributes"]["identifier"] == bid]
+          if found:
+              print("번들 ID 이미 있음:", bid)
+          else:
+              body = {"data": {"type": "bundleIds", "attributes": {"identifier": bid, "name": "hikidashi", "platform": "IOS"}}}
+              try:
+                  urllib.request.urlopen(urllib.request.Request("https://api.appstoreconnect.apple.com/v1/bundleIds", data=json.dumps(body).encode(), headers=h, method="POST"))
+                  print("번들 ID 등록함:", bid)
+              except urllib.error.HTTPError as e:
+                  print("::error::번들 ID 등록 실패", e.code, e.read().decode()[:500]); raise SystemExit(1)
+          PY
       - name: 프로젝트 만들기
         if: steps.check.outputs.ready == 'true'
         run: |
@@ -130,3 +157,32 @@ jobs:
           path: |
             archive.log
             export.log
+
+  ipa:
+    name: 서명 안 한 ipa (SideStore·AltStore 용)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: 가장 새 Xcode 고르기
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+      - name: 프로젝트 만들기
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+      - name: 빌드하고 ipa 로 묶기
+        run: |
+          cd ios
+          set -o pipefail
+          xcodebuild archive -project Hikidashi.xcodeproj -scheme Hikidashi -configuration Release \
+            -destination "generic/platform=iOS" -archivePath "$RUNNER_TEMP/Unsigned.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CURRENT_PROJECT_VERSION=$(( ${{ github.run_number }} + 100 )) | grep -E "error:|\*\* ARCHIVE" || true
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP/Unsigned.xcarchive/Products/Applications/Hikidashi.app" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa" && zip -qry ../hikidashi.ipa Payload
+          ls -la "$RUNNER_TEMP/hikidashi.ipa"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hikidashi-ipa
+          path: ${{ runner.temp }}/hikidashi.ipa
