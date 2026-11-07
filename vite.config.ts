@@ -34,6 +34,12 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         runtimeCaching: [
           {
+            // 토스페이스 이모지 글꼴: 한 번 받으면 오프라인에서도 쓴다
+            urlPattern: ({url}) => url.origin === 'https://cdn.jsdelivr.net' && url.pathname.startsWith('/gh/toss/tossface@'),
+            handler: 'CacheFirst',
+            options: {cacheName: 'tossface', expiration: {maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 365}},
+          },
+          {
             urlPattern: ({url}) => url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com',
             handler: 'StaleWhileRevalidate',
             options: {cacheName: 'google-fonts', expiration: {maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365}},

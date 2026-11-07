@@ -11,7 +11,7 @@ type Phase = 'idle' | 'drag' | 'armed' | 'release' | 'launch';
 
 /**
  * 추가 버튼. 누르면 onTap, 위로 끌어올렸다 놓으면 onPull.
- * 끄는 동안 버튼이 늘어나며 젤리 같은 기둥이 따라오고, 놓으면 튕기며 돌아온다.
+ * 끄는 동안 버튼이 같은 두께로 위로 길어지고(리퀴드 글래스), 놓으면 튕기며 돌아온다.
  * onPull 은 손을 떼는 바로 그 이벤트 안에서 부른다 (iOS 클립보드 읽기 조건).
  */
 export function PullFab({onTap, onPull}: {onTap: () => void; onPull: () => void}) {
@@ -66,7 +66,6 @@ export function PullFab({onTap, onPull}: {onTap: () => void; onPull: () => void}
 
   return (
     <div ref={wrap} className="pull-fab" data-phase={phase} style={{['--pull']: '0px', ['--p']: '0'} as CSSProperties}>
-      <span className="pull-stem" aria-hidden="true" />
       <span className="pull-hint" aria-hidden="true">{phase === 'armed' ? '놓으면 복사한 링크 추가' : '위로 끌어 올리면 바로 추가'}</span>
       <button
         ref={btn}

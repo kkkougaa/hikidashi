@@ -43,13 +43,15 @@ export interface Item extends Base {
   image?: string;
   /** 사이트가 밝힌 이름 (예: MDN Web Docs) */
   siteName?: string;
+  /** 직접 고른 아이콘 이모지 (토스페이스로 그린다). 있으면 이미지·로고보다 먼저 쓴다 */
+  emoji?: string;
   /** null 이면 미분류 */
   folderId: string | null;
   tags: string[];
   starred: boolean;
 }
 
-export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags' | 'image' | 'siteName'>;
+export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags' | 'image' | 'siteName' | 'emoji'>;
 
 export interface Backup {
   app: 'hikidashi';

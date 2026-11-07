@@ -10,6 +10,7 @@
 - 항목 아이콘: 글 대표 이미지 → 본문 이미지 → 사이트 로고 순 (유튜브는 영상 썸네일)
 - 태그는 칩으로 입력: 스페이스·쉼표·엔터로 추가, 없는 태그는 새로 만듦, 기존 태그 추천
 - 태그 맨 앞에 출처 사이트 칩(로고 + 사이트 이름)
+- 항목 아이콘으로 토스페이스 이모지를 고를 수 있음 (메모, 로고 없는 링크 등)
 - 서랍(폴더) 만들기, 이름·색 바꾸기, 삭제(안의 항목은 미분류로)
 - 태그, 즐겨찾기, 검색, 목록/카드 보기
 - 밀어서 즐겨찾기·편집·삭제, 길게 눌러 메뉴
@@ -25,6 +26,12 @@
 - X(트위터) 게시물: [FxTwitter](https://github.com/FixTweet/FxTwitter) 공개 API (`api.fxtwitter.com`). X 는 로그인 없이 글을 읽을 수 없어서 따로 쓴다. 실패하면 Jina Reader 로 다시 시도.
 - 사이트 로고: Google 파비콘 서비스 (`www.google.com/s2/favicons`)
 - 저장한 링크 주소가 이 서비스들로 전달된다.
+
+## 사용한 글꼴·이모지
+
+- 이모지: [토스페이스](https://toss.im/tossface) (`cdn.jsdelivr.net/gh/toss/tossface@1.6.1`).
+  Copyright (c) 2022, 2023 Viva Republica, with Reserved Font Name Tossface.
+  라이선스: https://toss.im/tossface/copyright · 원본 그대로 쓰고 수정하지 않는다.
 
 ## 개발
 

@@ -23,7 +23,7 @@ export function MemoSheet({item, folder, onClose, onEdit, onRemove, onStar}: {
               </div>
             }
           />
-          <h2 className="detail-title">{item.title || '제목 없는 메모'}</h2>
+          <h2 className="detail-title">{item.emoji && <span className="tossface detail-emoji" aria-hidden="true">{item.emoji}</span>}{item.title || '제목 없는 메모'}</h2>
           <div className="detail-rows">
             <div className="form-row">
               <span className="form-row-label">서랍</span>

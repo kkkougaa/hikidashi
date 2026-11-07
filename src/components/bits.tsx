@@ -13,6 +13,8 @@ export const folderColor = (f?: Folder | null) => (f ? COLORS[f.color] : COLORS.
  */
 export function Block(props: {item: Item; folder?: Folder | null}) {
   // 이미지가 바뀌면 실패 단계를 처음부터 다시
+  // 직접 고른 이모지가 있으면 그것부터 (토스페이스)
+  if (props.item.emoji) return <span className="block emoji tossface" aria-hidden="true">{props.item.emoji}</span>;
   return <BlockInner key={`${props.item.url ?? ''}|${props.item.image ?? ''}`} {...props} />;
 }
 

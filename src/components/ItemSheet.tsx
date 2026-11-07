@@ -8,6 +8,7 @@ import {guessTitle, normalizeUrl} from '../lib/format';
 import {fetchPageInfo} from '../lib/pageInfo';
 import {Block, ConfirmButton, SheetBar, cssVar} from './bits';
 import {TagInput} from './TagInput';
+import {EmojiPicker} from './EmojiPicker';
 
 export interface ItemSheetProps {
   isOpen: boolean;
@@ -63,6 +64,8 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
   const [siteName, setSiteName] = useState(init.siteName);
   const [folderId, setFolderId] = useState<string>((editing ? editing.folderId : (prefill?.folderId ?? defaultFolderId)) ?? NONE);
   const [tags, setTags] = useState<string[]>(init.tags ?? []);
+  const [emoji, setEmoji] = useState<string | undefined>(init.emoji);
+  const [pickOpen, setPickOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pasteMsg, setPasteMsg] = useState<string | null>(null);
   const [fetchState, setFetchState] = useState<FetchState>('idle');
@@ -138,10 +141,10 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
         return;
       }
       // 내용이 있으면 제목을 지어내지 않고 비워 둔다 (X 게시물 같은 경우)
-      onSave({...base, kind, url: u, title: base.title || (base.note ? '' : guessTitle(u)), image, siteName});
+      onSave({...base, kind, url: u, title: base.title || (base.note ? '' : guessTitle(u)), image, siteName, emoji});
     } else {
       if (!base.note && !base.title) return setErr('메모 내용을 적어주세요');
-      onSave({...base, kind, url: undefined, image: undefined, siteName: undefined});
+      onSave({...base, kind, url: undefined, image: undefined, siteName: undefined, emoji});
     }
   };
 
@@ -199,6 +202,22 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
 
       <div className="form-group rows">
         <FolderRow folders={folders} value={folderId} onChange={setFolderId} />
+        <button type="button" className="form-row tappable icon-row" aria-expanded={pickOpen} onClick={() => setPickOpen(o => !o)}>
+          <span className="form-row-label">아이콘</span>
+          <span className="form-row-value">
+            {emoji
+              ? <span className="tossface icon-preview">{emoji}</span>
+              : kind === 'link' && normalized
+                ? <Block item={{kind: 'link', url: normalized, image, title, note, folderId: null, tags: [], starred: false, id: 'icon-preview', createdAt: 0, updatedAt: 0, deletedAt: null}} />
+                : <span>{kind === 'memo' ? '기본' : '자동'}</span>}
+            <ChevronRight className={pickOpen ? 'chev open' : 'chev'} size={18} aria-hidden="true" />
+          </span>
+        </button>
+        <div className="picker-reveal" data-open={pickOpen} inert={!pickOpen}>
+          <div>
+            <EmojiPicker value={emoji} onChange={e => setEmoji(e)} autoLabel={kind === 'link' ? '자동 (글 이미지나 사이트 로고)' : '기본 (메모 아이콘)'} />
+          </div>
+        </div>
         <TagInput value={tags} onChange={setTags} suggestions={allTags} sourceUrl={normalized ?? undefined} siteName={siteName} />
       </div>
     </form>

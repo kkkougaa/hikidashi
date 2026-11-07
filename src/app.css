@@ -246,24 +246,23 @@ dialog:has(.sheet-float) .astryx-bottom-sheet { padding-bottom: 6px !important; 
 
 /* ── 끌어올리는 추가 버튼 (쫀득한 고무줄) ── */
 .pull-fab { position: relative; flex: none; width: 64px; height: 64px; align-self: start; margin: -12px max(12px, env(safe-area-inset-right, 0px)) 0 4px; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.pull-fab .fab { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; margin: 0; touch-action: none;
-  transform-origin: 50% 100%;
-  transform: translateY(calc(var(--pull) * -1)) scale(calc(1 - var(--p) * 0.14), calc(1 + var(--p) * 0.16)); }
-/* 버튼과 제자리 사이를 잇는 젤리 기둥: 늘어날수록 가늘어진다 */
-.pull-stem { position: absolute; z-index: 1; left: 50%; bottom: 4px; width: calc(56px - var(--p) * 34px); height: calc(var(--pull) + 28px); translate: -50% 0; border-radius: 999px; background: var(--color-accent); opacity: min(1, calc(var(--p) * 8)); }
+.pull-fab .fab { position: absolute; left: 0; right: 0; bottom: 0; top: auto; z-index: 2; width: 100%; margin: 0; touch-action: none;
+  /* 같은 두께 그대로 위로 길어진다 */
+  height: calc(64px + var(--pull));
+  display: block; border-radius: 22px; overflow: hidden; }
+.pull-fab .fab-icons { position: absolute; left: 0; right: 0; top: 0; height: 64px; }
 .pull-hint { position: absolute; z-index: 3; right: 0; bottom: calc(100% + var(--pull) + 14px); padding: 8px 12px; border-radius: 12px; background: var(--color-text-primary); color: var(--color-background-body); font-size: 13px; font-weight: 600; white-space: nowrap; pointer-events: none; opacity: 0; translate: 0 6px; transition: opacity 150ms ease-out, translate 200ms ease-out, background-color 150ms ease-out; }
 .pull-fab[data-phase="drag"] .pull-hint, .pull-fab[data-phase="armed"] .pull-hint { opacity: 1; translate: 0 0; }
 .pull-fab[data-phase="armed"] .pull-hint { background: var(--color-accent); color: var(--color-on-accent); }
 /* 놓으면 튕기며 제자리로 */
-.pull-fab[data-phase="release"] .fab, .pull-fab[data-phase="launch"] .fab { transition: transform 560ms cubic-bezier(.28, 1.7, .5, 1); }
-.pull-fab[data-phase="release"] .pull-stem, .pull-fab[data-phase="launch"] .pull-stem { transition: height 520ms cubic-bezier(.28, 1.6, .5, 1), width 520ms cubic-bezier(.28, 1.6, .5, 1), opacity 260ms ease-out; }
+.pull-fab[data-phase="release"] .fab, .pull-fab[data-phase="launch"] .fab { transition: height 600ms cubic-bezier(.28, 1.75, .5, 1); }
 .pull-fab[data-phase="launch"] .fab-icons { animation: fab-pop 520ms cubic-bezier(.28, 1.7, .5, 1); }
 @keyframes fab-pop { 0% { scale: .7; } 60% { scale: 1.18; } 100% { scale: 1; } }
 .fab-icons { display: grid; place-items: center; }
 .fab-icons svg { grid-area: 1 / 1; transition: opacity 200ms ease-out, scale 260ms cubic-bezier(.2, 0, 0, 1), filter 200ms ease-out; }
 .fab-icons svg.off { opacity: 0; scale: .25; filter: blur(4px); }
 @media (prefers-reduced-motion: reduce) {
-  .pull-fab .fab, .pull-stem { transition: none !important; }
+  .pull-fab .fab { transition: none !important; }
   .pull-fab[data-phase="launch"] .fab-icons { animation: none; }
   .fab-icons svg.off { scale: 1; filter: none; }
 }
@@ -271,3 +270,49 @@ dialog:has(.sheet-float) .astryx-bottom-sheet { padding-bottom: 6px !important; 
 /* 알림은 탭바·추가 버튼 위에 띄워서 버튼을 가리지 않게 */
 [data-astryx-layer-root][popover]:has([data-toast-id]) { bottom: calc(var(--tab-h) + 20px + env(safe-area-inset-bottom, 0px)) !important; pointer-events: none; }
 [data-astryx-layer-root][popover] [data-toast-id] { pointer-events: auto; }
+
+/* ── 리퀴드 글래스 추가 버튼 ── */
+.pull-fab .fab {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.28) 0%, rgba(255,255,255,0) 42%),
+    color-mix(in oklab, var(--color-accent) 84%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255,255,255,.38);
+  box-shadow:
+    inset 0 1.5px 1px rgba(255,255,255,.7),
+    inset 0 -3px 8px rgba(0,0,0,.16),
+    inset 0 0 18px rgba(255,255,255,.12),
+    0 12px 28px -8px color-mix(in oklab, var(--color-accent) 70%, transparent),
+    0 2px 6px rgba(0,0,0,.12);
+}
+/* 위쪽 가장자리의 반짝이는 빛 (유리의 반사광) */
+.pull-fab .fab::before { content: ""; position: absolute; left: 10%; right: 10%; top: 3px; height: 18px; border-radius: 999px; background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0)); pointer-events: none; }
+/* 늘어날수록 아래쪽에 고이는 빛 */
+.pull-fab .fab::after { content: ""; position: absolute; left: 14%; right: 14%; bottom: 4px; height: calc(10px + var(--pull) * .12); border-radius: 999px; background: radial-gradient(ellipse at 50% 100%, rgba(255,255,255,.35), rgba(255,255,255,0) 70%); opacity: calc(.3 + var(--p)); pointer-events: none; }
+@supports not (backdrop-filter: blur(1px)) { .pull-fab .fab { background: var(--color-accent); } }
+
+/* ── 토스페이스 이모지 ── */
+.tossface { font-family: Tossface, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; font-weight: 400; line-height: 1; }
+.block.emoji { background: var(--color-background-muted); color: inherit; font-size: 26px; outline: 1px solid light-dark(rgba(0,0,0,.05), rgba(255,255,255,.08)); outline-offset: -1px; }
+.icon-row { width: 100%; border: 0; background: none; font: inherit; color: inherit; text-align: start; padding-inline: 2px; }
+.icon-row .block { width: 32px; height: 32px; border-radius: 9px; font-size: 14px; }
+.icon-row .block.emoji { font-size: 20px; }
+.icon-preview { font-size: 26px; }
+.chev { transition: rotate 250ms cubic-bezier(.32,.72,0,1); }
+.chev.open { rotate: 90deg; }
+.picker-reveal { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 340ms cubic-bezier(.32,.72,0,1), opacity 200ms ease-out; }
+.picker-reveal > div { min-height: 0; overflow: hidden; }
+.picker-reveal[data-open="true"] { grid-template-rows: 1fr; opacity: 1; }
+.emoji-picker { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 12px; }
+.emoji-auto { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; border: 0; border-radius: 12px; background: var(--color-background-muted); color: var(--color-text-primary); font: inherit; font-size: 15px; cursor: pointer; }
+.emoji-auto[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--color-accent); color: var(--color-text-accent); font-weight: 600; }
+.emoji-group-name { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--color-text-secondary); }
+.emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; }
+.emoji-cell { display: grid; place-items: center; aspect-ratio: 1; border: 0; border-radius: 12px; background: none; font-size: 28px; cursor: pointer; transition: background-color 150ms ease-out, scale 150ms ease-out; }
+.emoji-cell[aria-checked="true"] { background: var(--color-accent-muted); box-shadow: inset 0 0 0 2px var(--color-accent); }
+.emoji-cell:focus-visible, .emoji-auto:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+@media (prefers-reduced-motion: no-preference) { .emoji-cell:active { scale: .9; } }
+.emoji-credit { margin: 0; font-size: 12px; color: var(--color-text-secondary); text-align: center; }
+.detail-emoji { display: inline-block; margin-inline-end: 10px; font-size: 30px; vertical-align: -3px; }
+@media (prefers-reduced-motion: reduce) { .picker-reveal, .chev { transition: none; } }
