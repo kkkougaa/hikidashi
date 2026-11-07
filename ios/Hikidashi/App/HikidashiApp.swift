@@ -93,7 +93,7 @@ struct RootView: View {
             if let t = store.toast {
                 ToastView(toast: t) { withAnimation(.snappy) { store.toast = nil } }
                     .padding(.horizontal, 24)
-                    .padding(.top, 6)
+                    .padding(.top, 52) // 위쪽 버튼 줄은 가리지 않게
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .id(t.id)
             }

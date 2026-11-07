@@ -57,6 +57,7 @@ struct MemoDetail: View {
         }
         .presentationDetents([.medium, .large])
         .presentationCornerRadius(36)
+        .presentationBackground(Color(.systemBackground))
     }
 
     private func row<V: View>(_ label: String, @ViewBuilder value: () -> V) -> some View {

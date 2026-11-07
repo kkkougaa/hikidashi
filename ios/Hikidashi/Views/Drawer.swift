@@ -97,6 +97,8 @@ struct DrawerView: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(name)
+        .accessibilityValue("\(count)개")
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 }

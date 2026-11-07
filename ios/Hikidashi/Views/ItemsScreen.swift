@@ -26,7 +26,7 @@ struct ItemsScreen: View {
             }
         }
         .navigationTitle(store.title(of: scope))
-        .searchable(text: $query, prompt: "제목, 메모, 태그, 주소")
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "제목, 메모, 태그, 주소")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button(action: onMenu) { Image(systemName: "sidebar.left") }
