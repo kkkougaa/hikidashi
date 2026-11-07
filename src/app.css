@@ -1,0 +1,128 @@
+@import '@astryxdesign/core/reset.css';
+@import '@astryxdesign/core/astryx.css';
+@import '@astryxdesign/theme-neutral/theme.css';
+
+/* 흰 바탕 + 진한 색 블록 + 연한 하늘색 머리 바. 색 대비는 계산해서 확인함 */
+[data-astryx-theme="neutral"] {
+  --font-family-body: Figtree, "Apple SD Gothic Neo", "IBM Plex Sans KR", -apple-system, "Malgun Gothic", system-ui, sans-serif;
+  --font-family-heading: Figtree, "Apple SD Gothic Neo", "IBM Plex Sans KR", -apple-system, "Malgun Gothic", system-ui, sans-serif;
+  --color-accent: light-dark(#1366E0, #4D94FF);
+  --color-on-accent: light-dark(#FFFFFF, #06162E);
+  --color-text-accent: light-dark(#1366E0, #4D94FF);
+  --color-icon-accent: light-dark(#1366E0, #4D94FF);
+  --color-accent-muted: light-dark(#E6F0FB, #14263C);
+  --color-background-body: light-dark(#FFFFFF, #121417);
+  --color-background-surface: light-dark(#FFFFFF, #1A1D21);
+  --color-background-card: light-dark(#FFFFFF, #1A1D21);
+  --color-background-popover: light-dark(#FFFFFF, #1F2328);
+  --color-background-muted: light-dark(#F2F4F7, #22262B);
+  --color-text-primary: light-dark(#191B1F, #EEF0F3);
+  --color-text-secondary: light-dark(#5F646C, #9AA1AC);
+  --color-border: light-dark(#E4E7EB, #2A2E34);
+}
+:root {
+  --head: light-dark(#E6F0FB, #14263C);
+  --line: light-dark(#E9ECEF, #262A30);
+  --star: light-dark(#C98500, #F0B000);
+  --tab-h: 60px;
+  --max: 640px;
+  color-scheme: light dark;
+}
+html, body, #root { min-height: 100%; }
+body { margin: 0; background: var(--color-background-body); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+.num { font-variant-numeric: tabular-nums; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* 넓은 화면에서도 폰 폭으로 */
+.app { max-width: var(--max); margin-inline: auto; min-height: 100dvh; background: var(--color-background-body); }
+@media (min-width: 700px) { body { background: light-dark(#EEF1F5, #0B0C0E); } .app { box-shadow: 0 0 0 1px var(--line); } }
+
+/* ── 머리 바 ── */
+.topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 4px; padding: env(safe-area-inset-top, 0px) max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px)); min-height: 56px; background: var(--head); }
+.topbar-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; padding-inline: 6px; }
+.topbar-title h1 { margin: 0; font-size: 22px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-title .num { font-size: 18px; font-weight: 500; letter-spacing: 0.08em; color: var(--color-text-secondary); }
+.bar-btn { display: grid; place-items: center; width: 44px; height: 44px; flex: none; border: 0; border-radius: 12px; background: none; color: var(--color-text-primary); cursor: pointer; }
+.bar-btn svg { width: 26px; height: 26px; }
+.bar-btn:active { background: light-dark(rgba(0,0,0,.06), rgba(255,255,255,.08)); }
+.bar-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+
+.content { padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + 32px) max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 24px; }
+.loading { display: grid; place-items: center; min-height: 50dvh; }
+
+/* 진한 색 블록 */
+.block { display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 12px; color: #fff; font-weight: 700; font-size: 18px; background: var(--c); }
+.block svg { width: 20px; height: 20px; }
+.pill { display: inline-flex; align-items: center; height: 22px; padding-inline: 8px; border-radius: 6px; background: var(--c); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pill.none { background: transparent; color: var(--color-text-secondary); box-shadow: inset 0 0 0 1px var(--line); }
+.dot { display: inline-block; width: 12px; height: 12px; border-radius: 4px; background: var(--c); flex: none; }
+.nav-dot { display: inline-grid; place-items: center; width: 20px; height: 20px; }
+
+/* ── 넉넉한 목록 ── */
+.day { display: flex; flex-direction: column; }
+.day-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px 10px; border-bottom: 1px solid var(--line); }
+.day-head h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--color-text-primary); }
+.day-head span { font-size: 13px; color: var(--color-text-secondary); }
+.row-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.row-title { display: block; font-size: 17px; line-height: 1.35; font-weight: 600; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-sub { display: block; font-size: 14px; line-height: 1.4; color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-meta { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+.row-meta .tag { font-size: 13px; color: var(--color-text-secondary); white-space: nowrap; }
+.row-end { display: flex; align-items: center; gap: 6px; color: var(--color-text-secondary); font-size: 14px; white-space: nowrap; }
+.row-end .star { color: var(--star); }
+.chev { color: light-dark(#B8BDC4, #555B63); }
+
+/* 카드 보기 */
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.cards > * { min-width: 0; width: 100%; }
+.card-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.card-title { margin: 0; font-size: 15px; line-height: 1.35; font-weight: 600; color: var(--color-text-primary); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.card-desc { margin: 0; font-size: 13px; line-height: 1.5; color: var(--color-text-secondary); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+.card-src { font-size: 12px; color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 340px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── 하단 탭바 ── */
+.tabbar { position: fixed; z-index: 20; bottom: 0; left: 50%; translate: -50% 0; width: 100%; max-width: var(--max); display: flex; align-items: stretch; padding-bottom: env(safe-area-inset-bottom, 0px); padding-inline: max(4px, env(safe-area-inset-left, 0px)) 0; background: var(--color-background-body); border-top: 1px solid var(--line); }
+.tab { flex: 1; display: grid; place-items: center; min-height: var(--tab-h); border: 0; background: none; color: light-dark(#7B818A, #8A919B); cursor: pointer; }
+.tab svg { width: 26px; height: 26px; }
+.tab[aria-pressed="true"] { color: var(--color-text-primary); }
+.tab:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -6px; border-radius: 12px; }
+.fab { flex: none; display: grid; place-items: center; width: 64px; height: 64px; align-self: start; margin: -12px max(12px, env(safe-area-inset-right, 0px)) 0 4px; border: 0; border-radius: 6px; background: var(--color-accent); color: var(--color-on-accent); box-shadow: 0 6px 16px rgba(19, 102, 224, 0.3); cursor: pointer; transition: scale 150ms ease-out; }
+.fab svg { width: 30px; height: 30px; }
+@media (prefers-reduced-motion: no-preference) { .fab:active, .tab:active { scale: 0.96; } }
+.fab:focus-visible { outline: 2px solid var(--color-text-primary); outline-offset: 2px; }
+
+/* ── 시트 ── */
+.sheet-head { position: relative; display: grid; place-items: center; min-height: 52px; margin-bottom: 12px; padding-inline: 56px; }
+.sheet-head h2 { margin: 0; font-size: 18px; font-weight: 700; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.round-btn { position: absolute; top: 50%; translate: 0 -50%; display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line); background: var(--color-background-surface); color: var(--color-text-primary); cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.round-btn.end { inset-inline-end: 0; }
+.round-btn.start { inset-inline-start: 0; }
+.round-btn svg { width: 22px; height: 22px; }
+.round-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.form-stack { display: flex; flex-direction: column; gap: 16px; }
+.with-action { display: flex; align-items: flex-end; gap: 8px; }
+.with-action > :first-child { flex: 1; min-width: 0; }
+.sheet-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.sheet-actions.split { justify-content: space-between; }
+.memo-full { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 17px; line-height: 1.6; color: var(--color-text-primary); }
+.link-full { font-size: 14px; color: var(--color-text-accent); overflow-wrap: anywhere; }
+
+/* 설정 행 (레퍼런스의 환경설정 화면처럼 박스 없이 넉넉하게) */
+.set-group { display: flex; flex-direction: column; }
+.set-group + .set-group { margin-top: 20px; }
+.set-label { margin: 0 0 4px; font-size: 13px; font-weight: 600; color: var(--color-text-secondary); }
+.set-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 8px 0; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--color-text-primary); font: inherit; font-size: 17px; text-align: start; cursor: pointer; }
+.set-row:disabled { cursor: default; }
+.set-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.set-row .hint { font-size: 13px; color: var(--color-text-secondary); }
+.set-row .val { font-size: 15px; color: var(--color-text-secondary); white-space: nowrap; }
+.set-row:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 8px; }
+
+/* 색 고르기 */
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.swatch { position: relative; width: 40px; height: 40px; border-radius: 12px; border: 0; background: var(--c); color: #fff; cursor: pointer; display: grid; place-items: center; }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--color-background-surface), 0 0 0 4px var(--c); }
+.swatch:focus-visible { outline: 2px solid var(--color-text-primary); outline-offset: 4px; }
+.swatch svg { width: 20px; height: 20px; }
