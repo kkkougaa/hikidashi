@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/apple-touch-icon.png', 'icons/favicon.svg'],
+      includeAssets: ['icons/apple-touch-icon.png', 'icons/favicon-64.png'],
       manifest: {
         name: 'hikidashi',
         short_name: 'hikidashi',

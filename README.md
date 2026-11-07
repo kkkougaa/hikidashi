@@ -43,6 +43,7 @@ npm run preview    # 빌드 결과 미리 보기
 ## 구조
 
 ```
+assets/icon-source.png    앱 아이콘 원본 (public/icons 의 크기별 파일은 여기서 잘라 만든 것)
 src/
   App.tsx                 화면 전체, 상태 연결
   data/types.ts           Item, Folder, 색
