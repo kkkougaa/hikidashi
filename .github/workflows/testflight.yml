@@ -1,0 +1,114 @@
+# 아이폰 앱을 서명해서 TestFlight 에 올린다.
+# 필요한 저장소 시크릿 (Settings → Secrets and variables → Actions):
+#   APPLE_TEAM_ID       개발자 계정의 Team ID (10자리)
+#   ASC_KEY_ID          App Store Connect API 키 ID
+#   ASC_ISSUER_ID       App Store Connect API Issuer ID
+#   ASC_KEY_P8_BASE64   내려받은 AuthKey_XXXX.p8 파일을 base64 로 바꾼 값
+# 시크릿이 없으면 실패하지 않고 건너뛴다.
+name: TestFlight
+
+on:
+  push:
+    branches: [main]
+    paths: ['ios/Hikidashi/**', 'ios/HikidashiCore/Sources/**', 'ios/project.yml', '.github/workflows/testflight.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: 빌드해서 TestFlight 에 올리기
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+    steps:
+      - name: 시크릿 확인
+        id: check
+        run: |
+          if [ -z "$APPLE_TEAM_ID" ] || [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8_BASE64" ]; then
+            echo "::notice::TestFlight 시크릿이 아직 없어서 건너뛴다 (.github/workflows/testflight.yml 맨 위 참고)"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v5
+        if: steps.check.outputs.ready == 'true'
+      - name: 가장 새 Xcode 고르기
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      - name: API 키 놓기
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/keys/AuthKey.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/AuthKey.p8" >> "$GITHUB_ENV"
+      - name: 프로젝트 만들기
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+      - name: 아카이브
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          cd ios
+          set -o pipefail
+          # 빌드 번호는 이 워크플로가 돈 횟수 + 100 (항상 커진다)
+          BUILD=$(( ${{ github.run_number }} + 100 ))
+          xcodebuild archive -project Hikidashi.xcodeproj -scheme Hikidashi \
+            -configuration Release -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/Hikidashi.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION="$BUILD" | tee ../archive.log | grep -E "error:|\*\* ARCHIVE" || true
+          grep -q "\*\* ARCHIVE SUCCEEDED \*\*" ../archive.log
+          echo "빌드 번호 $BUILD" >> "$GITHUB_STEP_SUMMARY"
+      - name: TestFlight 에 올리기
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Hikidashi.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tee export.log | grep -E "error:|Upload|EXPORT" || true
+          grep -q "EXPORT SUCCEEDED" export.log
+          echo "TestFlight 에 올렸다. App Store Connect 에서 처리가 끝나면 (10~30분) TestFlight 앱에 뜬다." >> "$GITHUB_STEP_SUMMARY"
+      - name: 키 지우기
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: testflight-log
+          path: |
+            archive.log
+            export.log
