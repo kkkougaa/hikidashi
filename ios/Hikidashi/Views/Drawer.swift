@@ -135,6 +135,7 @@ struct SettingsScreen: View {
     @AppStorage("linkOpen") private var linkOpen = "reader"
     @AppStorage("saveArticles") private var saveArticles = true
     @State private var cacheSize = 0
+    @State private var pickingSyncFolder = false
     @State private var articleCount = 0
     @AppStorage(SharedLibrary.defaultFolderKey) private var defaultFolder = ""
     @AppStorage("lastBackupAt") private var lastBackup: Double = 0
@@ -196,6 +197,33 @@ struct SettingsScreen: View {
                     NavigationLink { TagManager() } label: {
                         LabeledContent { Text("\(store.library.tagCounts.count)개") } label: { Label("태그 관리", systemImage: "number") }
                     }
+                }
+                Section {
+                    switch store.syncState {
+                    case .off:
+                        Button { pickingSyncFolder = true } label: {
+                            settingRow("iCloud Drive 폴더 고르기", hint: "웹앱(윈도우)과 다른 기기에서도 같은 항목을 봐요", icon: "icloud")
+                        }
+                        .fileImporter(isPresented: $pickingSyncFolder, allowedContentTypes: [.folder]) { result in
+                            if case .success(let url) = result { store.connectSync(folder: url) }
+                        }
+                    default:
+                        LabeledContent("폴더", value: store.syncState.folder ?? "")
+                        HStack {
+                            Text("상태")
+                            Spacer()
+                            switch store.syncState {
+                            case .syncing: ProgressView()
+                            case .failed(_, let m): Text(m).foregroundStyle(.red).font(.footnote).multilineTextAlignment(.trailing)
+                            case .idle(_, let last): Text(last.map { "\($0.formatted(.relative(presentation: .named))) 동기화" } ?? "아직 안 함").foregroundStyle(.secondary)
+                            case .off: EmptyView()
+                            }
+                        }
+                        Button { Task { await store.syncNow(quiet: false) } } label: { Label("지금 동기화", systemImage: "arrow.triangle.2.circlepath") }
+                        Button("연결 끊기", role: .destructive) { store.disconnectSync() }
+                    }
+                } header: { Text("동기화") } footer: {
+                    Text("서버 없이 형의 iCloud Drive 에 파일 하나(hikidashi-sync.json)로 맞춰요. iCloud Drive 에 ‘hikidashi’ 폴더를 만들어 골라주세요. 윈도우에서는 iCloud for Windows 를 켜고, 웹앱(크롬·엣지) 설정에서 같은 폴더를 고르면 돼요.")
                 }
                 Section("백업") {
                     if let backupURL {
@@ -315,6 +343,7 @@ struct TagManager: View {
                             Text("\(t.count)").foregroundStyle(.secondary).monospacedDigit()
                         }
                     }
+                    .buttonStyle(.plain)
                     .swipeActions {
                         Button(role: .destructive) { store.removeTag(t.tag) } label: { Label("삭제", systemImage: "trash") }
                     }

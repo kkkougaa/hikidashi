@@ -48,6 +48,10 @@ final class LibraryStore {
     /// 최근에 연 항목 (이 기기에만, 최신이 앞)
     private(set) var recentIDs: [String] = UserDefaults.standard.stringArray(forKey: "recentIDs") ?? []
     private(set) var checkingLinks = false
+    /// 동기화 상태 (iCloud Drive 폴더)
+    private(set) var syncState: SyncState = .off
+    private var syncTask: Task<Void, Never>?
+    private var syncing = false
     private var articles: [String: ReaderArticle] = [:]
 
     private let fileURL: URL
@@ -62,10 +66,12 @@ final class LibraryStore {
         } else {
             library = SharedLibrary.load(url) ?? .seeded()
         }
+        if !sample { restoreSyncState() }
         save()
     }
 
-    private func save() {
+    private func save(scheduleSync: Bool = true) {
+        defer { if scheduleSync { self.scheduleSync() } }
         do { try SharedLibrary.save(library, to: fileURL) } catch { show("저장하지 못했어요: \(error.localizedDescription)", error: true) }
         // 공유 화면에서 고를 수 있게 서랍·태그 목록을 넘겨 둔다
         ShareInbox.writeContext(.init(
@@ -447,5 +453,183 @@ enum ArticleDisk {
     static func clear() {
         try? FileManager.default.removeItem(at: folder)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    }
+}
+
+// MARK: - 동기화: iCloud Drive 폴더의 hikidashi-sync.json 하나를 기기들이 함께 쓴다
+
+enum SyncState: Equatable {
+    case off
+    case idle(folder: String, last: Date?)
+    case syncing(folder: String)
+    case failed(folder: String, message: String)
+
+    var folder: String? {
+        switch self {
+        case .off: nil
+        case .idle(let f, _), .syncing(let f), .failed(let f, _): f
+        }
+    }
+}
+
+enum SyncFile {
+    static let name = "hikidashi-sync.json"
+    /// 동시에 고쳐서 iCloud 가 만든 사본도 함께 합친다 ("hikidashi-sync 2.json" 등)
+    static func matches(_ file: String) -> Bool {
+        let n = file.hasPrefix(".") && file.hasSuffix(".icloud") ? String(file.dropFirst().dropLast(7)) : file
+        return n.hasPrefix("hikidashi-sync") && n.hasSuffix(".json")
+    }
+
+    /// 아직 기기에 안 받은 파일(.이름.icloud)은 받기를 부탁하고 잠깐 기다린다
+    static func downloaded(_ url: URL) async -> URL? {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: url.path) {
+            if let v = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]),
+               v.ubiquitousItemDownloadingStatus == .notDownloaded {
+                try? fm.startDownloadingUbiquitousItem(at: url)
+            } else {
+                return url
+            }
+        } else {
+            try? fm.startDownloadingUbiquitousItem(at: url)
+        }
+        for _ in 0..<30 {
+            try? await Task.sleep(for: .milliseconds(500))
+            if fm.fileExists(atPath: url.path),
+               (try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]))?.ubiquitousItemDownloadingStatus != .notDownloaded {
+                return url
+            }
+        }
+        return nil
+    }
+
+    /// 폴더 안 동기화 파일들을 모두 읽는다 (충돌 사본, 이전 판 포함)
+    static func readAll(in folder: URL) async throws -> (backups: [Backup], extras: [URL]) {
+        let fm = FileManager.default
+        let names = try fm.contentsOfDirectory(atPath: folder.path).filter(matches)
+        var urls: [URL] = []
+        for n in names {
+            let real = n.hasPrefix(".") && n.hasSuffix(".icloud") ? String(n.dropFirst().dropLast(7)) : n
+            let u = folder.appendingPathComponent(real)
+            if !urls.contains(u) { urls.append(u) }
+        }
+        var backups: [Backup] = []
+        var extras: [URL] = []
+        for u in urls {
+            guard let ready = await downloaded(u) else { continue }
+            var data: Data?
+            var err: NSError?
+            NSFileCoordinator().coordinate(readingItemAt: ready, options: [], error: &err) { data = try? Data(contentsOf: $0) }
+            if let data, let b = try? parseBackup(data) { backups.append(b) }
+            // 같은 파일의 충돌 판들도 합친다
+            for v in NSFileVersion.unresolvedConflictVersionsOfItem(at: ready) ?? [] {
+                if let d = try? Data(contentsOf: v.url), let b = try? parseBackup(d) { backups.append(b) }
+            }
+            if u.lastPathComponent != name { extras.append(u) }
+        }
+        return (backups, extras)
+    }
+
+    static func write(_ data: Data, in folder: URL, removing extras: [URL]) throws {
+        let main = folder.appendingPathComponent(name)
+        var err: NSError?
+        var writeError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: main, options: .forReplacing, error: &err) { u in
+            do { try data.write(to: u, options: .atomic) } catch { writeError = error }
+        }
+        if let e = err ?? writeError { throw e }
+        // 충돌 판은 다 합쳤으니 정리
+        try? NSFileVersion.removeOtherVersionsOfItem(at: main)
+        for v in NSFileVersion.unresolvedConflictVersionsOfItem(at: main) ?? [] { v.isResolved = true }
+        for x in extras {
+            NSFileCoordinator().coordinate(writingItemAt: x, options: .forDeleting, error: nil) { try? FileManager.default.removeItem(at: $0) }
+        }
+    }
+}
+
+extension LibraryStore {
+    private static let bookmarkKey = "syncFolderBookmark"
+
+    /// 저장된 폴더 (권한 포함)
+    private func syncFolderURL() -> URL? {
+        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return nil }
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
+        if stale, url.startAccessingSecurityScopedResource() {
+            defer { url.stopAccessingSecurityScopedResource() }
+            if let fresh = try? url.bookmarkData() { UserDefaults.standard.set(fresh, forKey: Self.bookmarkKey) }
+        }
+        return url
+    }
+
+    /// 앱을 켤 때 상태만 채운다
+    func restoreSyncState() {
+        guard let url = syncFolderURL() else { syncState = .off; return }
+        let last = UserDefaults.standard.object(forKey: "lastSyncAt") as? Date
+        syncState = .idle(folder: url.lastPathComponent, last: last)
+    }
+
+    /// 설정에서 폴더를 골랐을 때
+    func connectSync(folder url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try url.bookmarkData()
+            UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
+            syncState = .idle(folder: url.lastPathComponent, last: nil)
+            Task { await syncNow() }
+        } catch {
+            show("이 폴더는 쓸 수 없어요: \(error.localizedDescription)", error: true)
+        }
+    }
+
+    func disconnectSync() {
+        UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
+        UserDefaults.standard.removeObject(forKey: "lastSyncAt")
+        syncState = .off
+    }
+
+    /// 고친 뒤 잠깐 기다렸다가 (여러 번 고쳐도 한 번만)
+    func scheduleSync() {
+        guard syncState != .off, !syncing else { return }
+        syncTask?.cancel()
+        syncTask = Task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            await syncNow()
+        }
+    }
+
+    /// 폴더의 파일과 이 기기를 합치고, 합친 걸 다시 파일로 쓴다
+    func syncNow(quiet: Bool = true) async {
+        guard !syncing, let url = syncFolderURL() else { return }
+        let name = url.lastPathComponent
+        syncing = true
+        syncState = .syncing(folder: name)
+        defer { syncing = false }
+        guard url.startAccessingSecurityScopedResource() else {
+            syncState = .failed(folder: name, message: "폴더 권한이 사라졌어요. 다시 골라주세요")
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+        do {
+            let (backups, extras) = try await SyncFile.readAll(in: url)
+            var merged = library
+            var changed = 0
+            for b in backups { let r = merged.importBackup(b); changed += r.items + r.folders }
+            if changed > 0 {
+                withAnimation(.snappy) { library = merged }
+                save(scheduleSync: false)
+            }
+            let data = try library.backup().encoded()
+            try await Task.detached { try SyncFile.write(data, in: url, removing: extras) }.value
+            let now = Date()
+            UserDefaults.standard.set(now, forKey: "lastSyncAt")
+            syncState = .idle(folder: name, last: now)
+            if !quiet || changed > 0 { show(changed > 0 ? "다른 기기에서 \(changed)개를 가져왔어요" : "동기화했어요") }
+        } catch {
+            syncState = .failed(folder: name, message: error.localizedDescription)
+            if !quiet { show("동기화하지 못했어요", error: true) }
+        }
     }
 }

@@ -119,6 +119,7 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in if phase == .active {
                 store.drainShareInbox()
                 store.checkLinks()
+                Task { await store.syncNow() }
                 Task.detached(priority: .background) { ImageCache.trim() }
             } }
         .onChange(of: store.folders.map(\.id)) { _, ids in

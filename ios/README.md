@@ -36,9 +36,15 @@ cd ios && xcodegen generate && open Hikidashi.xcodeproj
 - 공통 로직: `cd ios/HikidashiCore && swift test` (맥·리눅스 모두)
 - 앱 전체: Xcode 에서 ⌘U, 또는 GitHub Actions 의 iOS 워크플로가 시뮬레이터에서 돌리고 스크린샷을 `ios-screenshots` 로 올린다.
 
+## 동기화
+
+설정 → 동기화에서 iCloud Drive 의 폴더(예: `hikidashi`)를 고르면, 그 폴더의 `hikidashi-sync.json` 으로 웹앱(윈도우 크롬·엣지)과 맞춘다. 서버도 iCloud 권한(entitlement)도 필요 없다. 자세한 건 저장소 맨 위 README.
+
 ## 웹앱과 다른 점
 
-- 링크 정보를 페이지에서 직접 읽는다 (웹은 CORS 때문에 Jina Reader 를 거친다). X 는 똑같이 FxTwitter.
+- 링크 정보와 리더 본문을 페이지에서 직접 읽는다 (웹은 CORS 때문에 Jina Reader 를 거친다). X 는 똑같이 FxTwitter.
+- 링크 점검(지워진 페이지에 "안 열림" 표시)은 앱이 하루 한 번 한다. 웹은 동기화로 결과만 받는다.
+- 공유 시트 확장이 있다: 서랍·태그를 고르고, 손대지 않으면 3초 뒤 저절로 저장. 앱을 열 때 들어간다.
 - 붙여넣기는 애플 기본 붙여넣기 버튼이라 권한 창이 뜨지 않는다. + 버튼을 끌어올리는 빠른 추가는 클립보드를 읽어서 iOS 가 한 번 묻는다.
 - 이모지는 애플 이모지로 보인다 (웹은 토스페이스).
 - 공유 시트에서 hikidashi 를 누르면 바로 저장된다 (웹은 홈 화면에 추가한 PWA 의 공유 대상으로 시트가 열린다).

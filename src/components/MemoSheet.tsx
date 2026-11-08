@@ -1,13 +1,19 @@
-import {Pencil, Star} from 'lucide-react';
+import {useEffect, useState} from 'react';
+import {CircleCheck, Pencil, PlusCircle, Star} from 'lucide-react';
 import {BottomSheet} from '@astryxdesign/core/BottomSheet';
 import {MoreMenu} from '@astryxdesign/core/MoreMenu';
 import {COLORS, type Folder, type Item} from '../data/types';
-import {stamp} from '../lib/format';
+import {domainOf, findUrls, guessTitle, stamp} from '../lib/format';
+import {fetchPageInfo, logoUrl, type PageInfo} from '../lib/pageInfo';
 import {SheetBar, cssVar} from './bits';
 
 /** 메모 보기: 화면에서 떠 있는 카드. 오른쪽 위에 [편집 | ⋯], 맨 아래 삭제 */
-export function MemoSheet({item, folder, onClose, onEdit, onRemove, onStar}: {
+export function MemoSheet({item, folder, onClose, onEdit, onRemove, onStar, saved, onOpenLink, onSaveLink}: {
   item: Item | null; folder?: Folder; onClose: () => void; onEdit: (i: Item) => void; onRemove: (i: Item) => void; onStar: (i: Item) => void;
+  /** 이미 저장한 링크 찾기 */
+  saved: (url: string) => Item | undefined;
+  onOpenLink: (url: string) => void;
+  onSaveLink: (url: string, info: PageInfo | null, folderId: string | null) => void;
 }) {
   return (
     <BottomSheet label={item?.title || '메모'} isOpen={!!item} onOpenChange={o => { if (!o) onClose(); }} height="hug">
@@ -50,9 +56,42 @@ export function MemoSheet({item, folder, onClose, onEdit, onRemove, onStar}: {
             )}
           </div>
           {item.note && <p className="memo-full">{item.note}</p>}
+          {findUrls(item.note).map(u => (
+            <LinkPreview key={u} url={u} saved={saved(u)} onOpen={() => onOpenLink(u)} onSave={info => onSaveLink(u, info, item.folderId)} />
+          ))}
           <button type="button" className="danger-btn" onClick={() => onRemove(item)}>삭제</button>
         </div>
       )}
     </BottomSheet>
+  );
+}
+
+const previews = new Map<string, PageInfo | null>();
+
+/** 메모 속 링크 미리보기: 그림, 제목, 사이트. 아직 저장 안 한 링크는 + 로 바로 저장 */
+function LinkPreview({url, saved, onOpen, onSave}: {url: string; saved?: Item; onOpen: () => void; onSave: (info: PageInfo | null) => void}) {
+  const [info, setInfo] = useState<PageInfo | null | undefined>(() => previews.get(url));
+  useEffect(() => {
+    if (saved || info !== undefined) return;
+    let alive = true;
+    void fetchPageInfo(url).then(r => { previews.set(url, r); if (alive) setInfo(r); });
+    return () => { alive = false; };
+  }, [url, saved, info]);
+  const img = saved?.image ?? info?.image;
+  const logo = logoUrl(url, 128);
+  const title = saved?.title || info?.title || (info === undefined && !saved ? '불러오는 중…' : guessTitle(url));
+  return (
+    <div className="link-preview">
+      <button type="button" className="link-preview-main" onClick={onOpen}>
+        <span className={img ? 'lp-thumb' : 'lp-thumb logo'}>{(img || logo) && <img src={(img || logo)!} alt="" loading="lazy" referrerPolicy="no-referrer" />}</span>
+        <span className="lp-text">
+          <span className="lp-title">{title}</span>
+          <span className="lp-site">{saved?.siteName || info?.siteName || domainOf(url)}</span>
+        </span>
+      </button>
+      {saved
+        ? <CircleCheck className="lp-saved" size={22} aria-label="저장된 링크" />
+        : <button type="button" className="lp-add" aria-label="이 링크 저장" onClick={() => onSave(info ?? null)}><PlusCircle size={24} /></button>}
+    </div>
   );
 }

@@ -17,10 +17,62 @@ export function normalizeUrl(input: string): string | null {
     const u = new URL(withProto);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
     if (!u.hostname.includes('.') && u.hostname !== 'localhost') return null;
-    return u.href;
+    return cleanUrl(u.href);
   } catch {
     return null;
   }
+}
+
+/** 어디서나 떼어도 되는 추적용 꼬리 (앱과 같은 목록) */
+const TRACKING = new Set([
+  'fbclid', 'gclid', 'dclid', 'gbraid', 'wbraid', 'msclkid', 'yclid', 'twclid', 'ttclid', 'li_fat_id',
+  'mc_cid', 'mc_eid', 'igshid', 'igsh', '_hsenc', '_hsmi', 'mkt_tok', 'vero_id', 'oly_enc_id', 'oly_anon_id',
+  'ref_src', 'ref_url', 'spm', 'scm', '__twitter_impression',
+]);
+/** 그 사이트에서만 추적용인 꼬리 */
+const SITE_TRACKING: Record<string, string[]> = {
+  'youtube.com': ['si', 'feature', 'pp'],
+  'youtu.be': ['si', 'feature'],
+  'music.youtube.com': ['si', 'feature'],
+  'open.spotify.com': ['si', 'context'],
+  'x.com': ['s', 't'],
+  'twitter.com': ['s', 't'],
+  'instagram.com': ['igsh', 'img_index'],
+  'threads.net': ['igshid', 'xmt', 'slof'],
+  'threads.com': ['igshid', 'xmt', 'slof'],
+  'linkedin.com': ['trk', 'trackingid', 'lipi'],
+  'coupang.com': ['src', 'spec', 'addtag', 'ctag', 'lptag', 'itime', 'pageType', 'pageValue', 'wPcid', 'wRef', 'wTime', 'redirect', 'isAddedCart', 'traceid', 'requestid', 'sourceType'],
+};
+
+/** 주소에서 utm_ 같은 추적 꼬리와 글자 위치 조각(#:~:text=)을 뗀다 */
+export function cleanUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    const siteKey = Object.keys(SITE_TRACKING).find(k => host === k || host.endsWith(`.${k}`));
+    const site = new Set((siteKey ? SITE_TRACKING[siteKey] : []).flatMap(n => [n, n.toLowerCase()]));
+    const keys = [...u.searchParams.keys()];
+    let changed = false;
+    for (const k of keys) {
+      const n = k.toLowerCase();
+      if (n.startsWith('utm_') || TRACKING.has(n) || site.has(k) || site.has(n)) { u.searchParams.delete(k); changed = true; }
+    }
+    if (u.hash.startsWith('#:~:')) { u.hash = ''; changed = true; }
+    if (!changed) return url;
+    return u.href.replace(/\?(?=#|$)/, '');
+  } catch {
+    return url;
+  }
+}
+
+/** 글 안의 모든 주소 (같은 건 한 번만) */
+export function findUrls(text = ''): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/https?:\/\/[^\s<>"'）)\]]+/gi)) {
+    const u = normalizeUrl(m[0].replace(/[.,!?;:]+$/, ''));
+    if (u && !out.includes(u)) out.push(u);
+  }
+  return out;
 }
 
 /** 공유로 받은 글 안에서 첫 주소를 찾는다 */

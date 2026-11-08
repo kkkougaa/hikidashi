@@ -61,6 +61,12 @@ export interface Item extends Base {
   folderId: string | null;
   tags: string[];
   starred: boolean;
+  /** 리더에서 형광펜 친 문단들 */
+  highlights?: string[];
+  /** 링크가 열리지 않는 걸 처음 알게 된 때 (앱이 점검한다. 열리면 없음) */
+  brokenAt?: number | null;
+  /** 링크 점검을 마지막으로 한 때 */
+  checkedAt?: number;
 }
 
 export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags' | 'image' | 'siteName' | 'emoji'>;

@@ -1,12 +1,12 @@
 import {useState} from 'react';
-import {Check, ChevronLeft, ChevronRight, Plus} from 'lucide-react';
+import {ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, Plus} from 'lucide-react';
 import {BottomSheet} from '@astryxdesign/core/BottomSheet';
 import {COLORS, COLOR_NAMES, type ColorKey, type Folder} from '../data/types';
 import {ConfirmButton, cssVar, SheetHead} from './bits';
 
 type Mode = {type: 'list'} | {type: 'edit'; folder: Folder | null};
 
-export function FoldersSheet({isOpen, onClose, folders, counts, onAdd, onUpdate, onRemove}: {
+export function FoldersSheet({isOpen, onClose, folders, counts, onAdd, onUpdate, onRemove, onReorder}: {
   isOpen: boolean;
   onClose: () => void;
   folders: Folder[];
@@ -14,7 +14,15 @@ export function FoldersSheet({isOpen, onClose, folders, counts, onAdd, onUpdate,
   onAdd: (name: string, color: ColorKey) => void;
   onUpdate: (id: string, patch: {name?: string; color?: ColorKey}) => void;
   onRemove: (f: Folder) => void;
+  onReorder: (ids: string[]) => void;
 }) {
+  const move = (i: number, d: -1 | 1) => {
+    const ids = folders.map(f => f.id);
+    const j = i + d;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    onReorder(ids);
+  };
   const [mode, setMode] = useState<Mode>({type: 'list'});
   const close = () => { setMode({type: 'list'}); onClose(); };
   return (
@@ -23,13 +31,17 @@ export function FoldersSheet({isOpen, onClose, folders, counts, onAdd, onUpdate,
         <>
           <SheetHead title="서랍 편집" onClose={close} closeLabel="서랍 편집 닫기" />
           <div className="set-group">
-            {folders.map(f => (
-              <button key={f.id} className="set-row" onClick={() => setMode({type: 'edit', folder: f})}>
-                <span className="dot" style={cssVar(COLORS[f.color])} aria-hidden="true" />
-                <span className="grow">{f.name}</span>
-                <span className="val num">{counts.get(f.id) ?? 0}개</span>
-                <ChevronRight className="chev" size={18} aria-hidden="true" />
-              </button>
+            {folders.map((f, i) => (
+              <div key={f.id} className="set-row split">
+                <button type="button" className="split-main" onClick={() => setMode({type: 'edit', folder: f})}>
+                  <span className="dot" style={cssVar(COLORS[f.color])} aria-hidden="true" />
+                  <span className="grow">{f.name}</span>
+                  <span className="val num">{counts.get(f.id) ?? 0}개</span>
+                  <ChevronRight className="chev" size={18} aria-hidden="true" />
+                </button>
+                <button type="button" className="icon-btn" aria-label={`${f.name} 위로`} disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp size={17} /></button>
+                <button type="button" className="icon-btn" aria-label={`${f.name} 아래로`} disabled={i === folders.length - 1} onClick={() => move(i, 1)}><ArrowDown size={17} /></button>
+              </div>
             ))}
             <button className="set-row" onClick={() => setMode({type: 'edit', folder: null})} style={{color: 'var(--color-text-accent)'}}>
               <Plus size={20} aria-hidden="true" />

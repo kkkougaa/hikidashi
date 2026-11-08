@@ -100,7 +100,7 @@ struct ReaderView: View {
             VStack(alignment: .leading, spacing: fontSize * 0.9) {
                 VStack(alignment: .leading, spacing: 10) {
                     if let url = item.url { SourceChip(url: url, siteName: item.siteName ?? a.siteName) }
-                    Text(a.title ?? item.displayTitle)
+                    Text(item.title.isEmpty ? (a.title ?? item.displayTitle) : item.title)
                         .font(font(1.45, weight: .bold))
                         .lineSpacing(2)
                     HStack(spacing: 6) {
@@ -212,6 +212,7 @@ struct HighlightsList: View {
                                 .padding(.leading, 12)
                                 .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(Color.yellow).frame(width: 4) }
                         }
+                        .buttonStyle(.plain)
                         .swipeActions {
                             Button(role: .destructive) { store.toggleHighlight(item, text: h) } label: { Label("지우기", systemImage: "eraser") }
                         }

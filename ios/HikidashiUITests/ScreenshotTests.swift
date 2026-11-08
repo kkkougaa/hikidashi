@@ -64,6 +64,8 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.buttons["설정 닫기"].waitForExistence(timeout: 5))
         sleep(1)
         snap("06-settings")
+        // 정리 칸이 아래에 있어서 조금 올린다
+        app.swipeUp()
         // 줄 이름이 "태그 관리, 5개" 처럼 개수와 합쳐져 읽힌다
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH '태그 관리'")).firstMatch.tap()
         XCTAssertTrue(app.navigationBars["태그 관리"].waitForExistence(timeout: 3))
@@ -97,7 +99,8 @@ final class ScreenshotTests: XCTestCase {
         app.buttons["즐겨찾기"].firstMatch.tap()
         XCTAssertTrue(app.buttons["되돌리기"].waitForExistence(timeout: 3))
 
-        // 글 링크는 리더 모드로 열린다
+        // 글 링크는 리더 모드로 열린다 (알림이 첫 줄을 가리니 사라진 뒤에)
+        sleep(4)
         app.staticTexts["CSS 그리드 레이아웃"].firstMatch.tap()
         XCTAssertTrue(app.buttons["리더 닫기"].waitForExistence(timeout: 5), "리더가 열려야 한다")
         sleep(6) // 본문 받기

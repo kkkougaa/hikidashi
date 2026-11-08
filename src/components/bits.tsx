@@ -56,9 +56,10 @@ export function SourceChip({url, siteName}: {url: string; siteName?: string}) {
 
 export function Meta({item, folder, showFolder}: {item: Item; folder?: Folder | null; showFolder: boolean}) {
   const hasSource = item.kind === 'link' && !!item.url;
-  if (!showFolder && !item.tags.length && !hasSource) return null;
+  if (!showFolder && !item.tags.length && !hasSource && !item.brokenAt) return null;
   return (
     <span className="row-meta">
+      {item.brokenAt ? <span className="pill broken" title="링크가 열리지 않아요">안 열림</span> : null}
       {showFolder && (folder ? <span className="pill" style={cssVar(folderColor(folder))}>{folder.name}</span> : <span className="pill none">미분류</span>)}
       {hasSource && <SourceChip url={item.url!} siteName={item.siteName} />}
       {item.tags.map(t => <span key={t} className="tag">#{t}</span>)}

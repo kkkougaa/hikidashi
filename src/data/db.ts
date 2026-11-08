@@ -1,21 +1,27 @@
 import {openDB, type DBSchema, type IDBPDatabase} from 'idb';
 import type {Folder, Item} from './types';
+import type {Article} from '../lib/reader';
 
 interface HikidashiDB extends DBSchema {
   items: {key: string; value: Item};
   folders: {key: string; value: Folder};
   meta: {key: string; value: unknown};
+  /** 리더 본문 (항목 id → 본문). 동기화하지 않는다 */
+  articles: {key: string; value: Article};
 }
 
 const DB_NAME = 'hikidashi';
 let dbPromise: Promise<IDBPDatabase<HikidashiDB>> | null = null;
 
 export function db() {
-  dbPromise ??= openDB<HikidashiDB>(DB_NAME, 1, {
-    upgrade(d) {
-      d.createObjectStore('items', {keyPath: 'id'});
-      d.createObjectStore('folders', {keyPath: 'id'});
-      d.createObjectStore('meta');
+  dbPromise ??= openDB<HikidashiDB>(DB_NAME, 2, {
+    upgrade(d, old) {
+      if (old < 1) {
+        d.createObjectStore('items', {keyPath: 'id'});
+        d.createObjectStore('folders', {keyPath: 'id'});
+        d.createObjectStore('meta');
+      }
+      if (old < 2) d.createObjectStore('articles');
     },
   });
   return dbPromise;
@@ -59,4 +65,24 @@ export async function requestPersistence(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function getArticle(id: string): Promise<Article | undefined> {
+  return (await db()).get('articles', id);
+}
+
+export async function putArticle(id: string, a: Article) {
+  await (await db()).put('articles', a, id);
+}
+
+export async function hasArticle(id: string): Promise<boolean> {
+  return (await (await db()).getKey('articles', id)) !== undefined;
+}
+
+export async function countArticles(): Promise<number> {
+  return (await db()).count('articles');
+}
+
+export async function clearArticles() {
+  await (await db()).clear('articles');
 }

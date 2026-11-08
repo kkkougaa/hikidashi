@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {bucketOf, daysAgo, domainOf, findUrl, guessTitle, normalizeUrl, parseTags, stamp} from './format';
+import {bucketOf, cleanUrl, daysAgo, domainOf, findUrl, findUrls, guessTitle, normalizeUrl, parseTags, stamp} from './format';
 
 describe('주소', () => {
   it('프로토콜 없이 적어도 https 주소로 바꾼다', () => {
@@ -53,5 +53,21 @@ describe('날짜', () => {
     expect(stamp(at(6), now)).toBe('어제');
     expect(stamp(new Date(2026, 9, 28).getTime(), now)).toBe('10월 28일');
     expect(stamp(new Date(2025, 0, 3).getTime(), now)).toBe('2025년 1월 3일');
+  });
+});
+
+
+describe('추적 꼬리 떼기', () => {
+  it('앱과 같은 규칙', () => {
+    expect(normalizeUrl('https://ex.com/a?utm_source=x&id=3&fbclid=abc')).toBe('https://ex.com/a?id=3');
+    expect(normalizeUrl('https://ex.com/a?utm_medium=m')).toBe('https://ex.com/a');
+    expect(normalizeUrl('https://youtu.be/jNQXAC9IVRw?si=abcd&t=10')).toBe('https://youtu.be/jNQXAC9IVRw?t=10');
+    expect(normalizeUrl('https://x.com/a/status/1585341984679469056?s=20&t=xyz')).toBe('https://x.com/a/status/1585341984679469056');
+    expect(normalizeUrl('https://ex.com/search?s=css&t=2')).toBe('https://ex.com/search?s=css&t=2');
+    expect(cleanUrl('https://ex.com/a#:~:text=hello')).toBe('https://ex.com/a');
+    expect(cleanUrl('https://ex.com/a#section')).toBe('https://ex.com/a#section');
+  });
+  it('글 속 주소 모두', () => {
+    expect(findUrls('볼 것: https://a.com/x, 그리고 (https://b.com/y). 또 https://a.com/x')).toEqual(['https://a.com/x', 'https://b.com/y']);
   });
 });

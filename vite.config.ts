@@ -44,6 +44,12 @@ export default defineConfig({
             handler: 'StaleWhileRevalidate',
             options: {cacheName: 'google-fonts', expiration: {maxEntries: 30, maxAgeSeconds: 60 * 60 * 24 * 365}},
           },
+          {
+            // 썸네일·로고: 한 번 본 그림은 기기에 두고 인터넷 없이도 보여준다 (다른 사이트 그림이라 응답이 불투명해도 저장)
+            urlPattern: ({request, url}) => request.destination === 'image' && url.origin !== self.location.origin,
+            handler: 'CacheFirst',
+            options: {cacheName: 'thumbs', expiration: {maxEntries: 800, maxAgeSeconds: 60 * 60 * 24 * 90, purgeOnQuotaError: true}, cacheableResponse: {statuses: [0, 200]}},
+          },
         ],
       },
     }),

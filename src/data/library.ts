@@ -40,6 +40,15 @@ export interface Library {
   removeFolder: (id: string) => () => void;
   importBackup: (b: Backup) => {items: number; folders: number};
   allRecords: () => {items: Item[]; folders: Folder[]};
+  /** 여러 항목을 한 번에 고친다. 되돌리기용으로 고치기 전 모습을 돌려준다 */
+  updateMany: (ids: string[], fn: (i: Item) => Partial<Item>) => Item[];
+  /** updateMany 가 돌려준 모습으로 되돌린다 (다른 기기에도 퍼지게 수정 시각은 새로) */
+  restoreVersions: (prev: Item[]) => void;
+  /** 태그 이름 바꾸기 (같은 이름이 있으면 합쳐진다) */
+  renameTag: (from: string, to: string) => Item[];
+  removeTag: (tag: string) => Item[];
+  toggleHighlight: (id: string, text: string) => void;
+  reorderFolders: (ids: string[]) => void;
 }
 
 export function useLibrary(): Library {
@@ -140,6 +149,45 @@ export function useLibrary(): Library {
       return {items: ii.changed.length, folders: fi.changed.length};
     },
     allRecords: () => ({items: itemsRef.current, folders: foldersRef.current}),
+    updateMany: (ids, fn) => {
+      const set = new Set(ids);
+      const prev = itemsRef.current.filter(i => set.has(i.id));
+      const now = Date.now();
+      if (prev.length) writeItems(prev.map(i => ({...i, ...fn(i), updatedAt: now})));
+      return prev;
+    },
+    restoreVersions: prev => {
+      const now = Date.now();
+      if (prev.length) writeItems(prev.map(i => ({...i, updatedAt: now})));
+    },
+    renameTag: (from, to) => {
+      const t = to.trim().replace(/^#+/, '').trim();
+      if (!t || t === from) return [];
+      const live = itemsRef.current.filter(i => !i.deletedAt && i.tags.includes(from));
+      const now = Date.now();
+      if (live.length) writeItems(live.map(i => ({...i, tags: [...new Set(i.tags.map(x => (x === from ? t : x)))], updatedAt: now})));
+      return live;
+    },
+    removeTag: tag => {
+      const live = itemsRef.current.filter(i => !i.deletedAt && i.tags.includes(tag));
+      const now = Date.now();
+      if (live.length) writeItems(live.map(i => ({...i, tags: i.tags.filter(x => x !== tag), updatedAt: now})));
+      return live;
+    },
+    toggleHighlight: (id, text) => {
+      const cur = find(id);
+      if (!cur) return;
+      const h = cur.highlights ?? [];
+      writeItems([{...cur, highlights: h.includes(text) ? h.filter(x => x !== text) : [...h, text], updatedAt: Date.now()}]);
+    },
+    reorderFolders: ids => {
+      const now = Date.now();
+      const changed = ids.flatMap((id, n) => {
+        const f = foldersRef.current.find(x => x.id === id);
+        return f && f.order !== n ? [{...f, order: n, updatedAt: now}] : [];
+      });
+      if (changed.length) writeFolders(changed);
+    },
   }), [writeItems, writeFolders]);
 
   const liveItems = useMemo(() => items.filter(i => !i.deletedAt).sort((a, b) => b.createdAt - a.createdAt), [items]);

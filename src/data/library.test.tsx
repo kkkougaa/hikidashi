@@ -96,3 +96,32 @@ describe('서랍 데이터', () => {
     expect(lib.items.find(i => i.id === id)?.title).toBe('새것');
   });
 });
+
+describe('여러 개 고치기·태그·형광펜', () => {
+  it('updateMany 와 되돌리기, 태그 합치기·빼기, 형광펜, 서랍 순서', async () => {
+    await mount();
+    let a = '', b = '';
+    await act(async () => {
+      a = lib.addItem({kind: 'memo', title: 'a', note: '', folderId: null, tags: ['css', '참고']}).id;
+      b = lib.addItem({kind: 'memo', title: 'b', note: '', folderId: null, tags: ['CSS']}).id;
+    });
+    let prev: ReturnType<Library['updateMany']> = [];
+    await act(async () => { prev = lib.updateMany([a, b], () => ({starred: true})); });
+    expect(lib.items.every(i => i.starred)).toBe(true);
+    await act(async () => lib.restoreVersions(prev));
+    expect(lib.items.some(i => i.starred)).toBe(false);
+    await act(async () => { lib.renameTag('CSS', '#css'); });
+    expect(lib.items.find(i => i.id === b)?.tags).toEqual(['css']);
+    await act(async () => { lib.renameTag('참고', 'css'); });
+    expect(lib.items.find(i => i.id === a)?.tags).toEqual(['css']);
+    await act(async () => { lib.removeTag('css'); });
+    expect(lib.items.every(i => i.tags.length === 0)).toBe(true);
+    await act(async () => lib.toggleHighlight(a, '문단'));
+    expect(lib.items.find(i => i.id === a)?.highlights).toEqual(['문단']);
+    await act(async () => lib.toggleHighlight(a, '문단'));
+    expect(lib.items.find(i => i.id === a)?.highlights).toEqual([]);
+    const ids = lib.folders.map(f => f.id);
+    await act(async () => lib.reorderFolders([ids[2], ids[0], ids[1]]));
+    expect(lib.folders.map(f => f.id)).toEqual([ids[2], ids[0], ids[1]]);
+  });
+});
