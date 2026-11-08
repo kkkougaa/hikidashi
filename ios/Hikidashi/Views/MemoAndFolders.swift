@@ -31,6 +31,16 @@ struct MemoDetail: View {
                     if !item.note.isEmpty {
                         Text(item.note).font(.body).lineSpacing(4).textSelection(.enabled).padding(.vertical, 16)
                     }
+                    // 메모 안의 링크는 미리보기 카드로
+                    let links = findURLs(in: item.note)
+                    if !links.isEmpty {
+                        VStack(spacing: 10) {
+                            ForEach(links, id: \.self) { url in
+                                LinkPreviewCard(url: url, folderId: item.folderId) { open(url) }
+                            }
+                        }
+                        .padding(.bottom, 16)
+                    }
                     Button(role: .destructive) {
                         dismiss()
                         store.remove(item)
@@ -58,6 +68,16 @@ struct MemoDetail: View {
         .presentationDetents([.medium, .large])
         .presentationCornerRadius(36)
         .presentationBackground(Color(.systemBackground))
+    }
+
+    /// 시트를 닫고 나서 연다 (시트 위에 또 띄울 수 없어서)
+    private func open(_ url: String) {
+        let saved = store.allItems.first { $0.url == url }
+        dismiss()
+        Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            if let saved { store.open(saved) } else if let u = URL(string: url) { store.webPage = WebPage(url: u) }
+        }
     }
 
     private func row<V: View>(_ label: String, @ViewBuilder value: () -> V) -> some View {
@@ -136,3 +156,53 @@ struct FolderEditor: View {
     }
 }
 
+
+/// 메모 속 링크 미리보기: 그림, 제목, 사이트. 아직 저장 안 한 링크는 + 로 바로 저장
+struct LinkPreviewCard: View {
+    let url: String
+    var folderId: String?
+    var onOpen: () -> Void
+    @Environment(LibraryStore.self) private var store
+    @State private var info: PageInfo?
+    @State private var loading = true
+
+    var body: some View {
+        let saved = store.allItems.first { $0.url == url }
+        HStack(spacing: 12) {
+            Group {
+                if let img = saved?.image ?? info?.image {
+                    CachedImage(url: img) { $0.resizable().scaledToFill() } placeholder: { Color(.tertiarySystemFill) }
+                } else {
+                    CachedImage(url: logoURL(url, size: 128) ?? "") { $0.resizable().scaledToFit().padding(12) } placeholder: { Color(.tertiarySystemFill) }
+                        .background(Color(.systemBackground))
+                }
+            }
+            .frame(width: 64, height: 64).clipShape(.rect(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(saved?.displayTitle ?? info?.title ?? (loading ? "불러오는 중…" : guessTitle(url)))
+                    .font(.subheadline.weight(.semibold)).lineLimit(2).foregroundStyle(.primary)
+                Text(saved?.siteName ?? info?.siteName ?? domain(of: url)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if saved == nil {
+                Button {
+                    store.add(ItemDraft(kind: .link, url: url, title: info?.title ?? "", note: info?.description ?? "", image: info?.image, siteName: info?.siteName, folderId: folderId))
+                    store.show("링크를 저장했어요")
+                } label: { Image(systemName: "plus.circle.fill").font(.title2).foregroundStyle(Color.brand) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("이 링크 저장")
+            } else {
+                Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(.secondary).accessibilityLabel("저장된 링크")
+            }
+        }
+        .padding(10)
+        .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 16))
+        .contentShape(.rect(cornerRadius: 16))
+        .onTapGesture(perform: onOpen)
+        .task(id: url) {
+            guard saved == nil, info == nil else { loading = false; return }
+            info = await store.previewInfo(url)
+            loading = false
+        }
+    }
+}

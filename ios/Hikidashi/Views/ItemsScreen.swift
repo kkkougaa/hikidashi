@@ -21,6 +21,8 @@ struct ItemsScreen: View {
         Group {
             if items.isEmpty {
                 empty
+            } else if scope == .highlights {
+                HighlightsList(items: items.sorted { $0.updatedAt > $1.updatedAt })
             } else if viewMode == "grid" {
                 grid(items)
             } else {
@@ -102,6 +104,10 @@ struct ItemsScreen: View {
     @ViewBuilder private var empty: some View {
         if !query.isEmpty {
             ContentUnavailableView.search(text: query)
+        } else if scope == .highlights {
+            ContentUnavailableView("하이라이트가 없어요", systemImage: "highlighter", description: Text("리더 모드에서 문단을 길게 눌러 형광펜을 칠해보세요."))
+        } else if scope == .broken {
+            ContentUnavailableView("모두 잘 열려요", systemImage: "checkmark.seal", description: Text("열리지 않는 링크가 생기면 여기에 모여요."))
         } else if scope == .starred {
             ContentUnavailableView("즐겨찾기가 없어요", systemImage: "star", description: Text("항목을 오른쪽으로 밀어 즐겨찾기에 넣으세요."))
         } else {
@@ -228,6 +234,7 @@ struct ItemCard: View {
                 if !sub.isEmpty { Text(sub).font(.footnote).foregroundStyle(.secondary).lineLimit(cover == nil ? 4 : 2) }
                 // 목록과 같은 줄: 서랍 · 출처 사이트 칩(로고) · 태그
                 FlowLayout(spacing: 5) {
+                    if item.brokenAt != nil { BrokenBadge() }
                     if showFolder { FolderPill(folder: folder) }
                     if item.kind == .link, let url = item.url { SourceChip(url: url, siteName: item.siteName) }
                     ForEach(item.tags, id: \.self) { t in

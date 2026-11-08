@@ -75,6 +75,30 @@ public struct Library: Codable, Equatable, Sendable {
     }
 
     public mutating func toggleStar(_ id: String, now: Millis = .now) { update(id, now: now) { $0.starred.toggle() } }
+
+    /// 문단에 형광펜 치기·지우기
+    public mutating func toggleHighlight(_ id: String, text: String, now: Millis = .now) {
+        update(id, now: now) { it in
+            if let i = it.highlights.firstIndex(of: text) { it.highlights.remove(at: i) } else { it.highlights.append(text) }
+        }
+    }
+
+    /// 링크 점검 결과를 적는다. 깨짐 여부가 바뀔 때만 수정 시각을 올린다 (동기화가 괜히 늘지 않게)
+    public mutating func recordCheck(_ id: String, _ health: LinkHealth, now: Millis = .now) {
+        guard let i = items.firstIndex(where: { $0.id == id }), health != .unknown else { return }
+        let wasBroken = items[i].brokenAt != nil
+        let isBroken = health == .broken
+        items[i].checkedAt = now
+        if wasBroken != isBroken {
+            items[i].brokenAt = isBroken ? now : nil
+            items[i].updatedAt = max(now, items[i].updatedAt + 1)
+        }
+    }
+
+    /// 형광펜이 있는 항목, 최근 고친 순
+    public var highlighted: [Item] { liveItems.filter { !$0.highlights.isEmpty }.sorted { $0.updatedAt > $1.updatedAt } }
+    /// 열리지 않는 링크
+    public var broken: [Item] { liveItems.filter { $0.brokenAt != nil } }
     public mutating func remove(_ id: String, now: Millis = .now) { update(id, now: now) { $0.deletedAt = now } }
     public mutating func restore(_ id: String, now: Millis = .now) { update(id, now: now) { $0.deletedAt = nil } }
 

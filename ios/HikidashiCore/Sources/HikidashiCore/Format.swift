@@ -16,7 +16,58 @@ public func normalizeURL(_ input: String) -> String? {
           let host = c.host, host.contains(".") || host == "localhost" else { return nil }
     c.scheme = scheme
     if c.path.isEmpty { c.path = "/" }
-    return c.string
+    return c.string.map(cleanURL)
+}
+
+/// 어디서나 떼어도 되는 추적용 꼬리
+private let trackingParams: Set<String> = [
+    "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "yclid", "twclid", "ttclid", "li_fat_id",
+    "mc_cid", "mc_eid", "igshid", "igsh", "_hsenc", "_hsmi", "mkt_tok", "vero_id", "oly_enc_id", "oly_anon_id",
+    "ref_src", "ref_url", "spm", "scm", "__twitter_impression",
+]
+
+/// 그 사이트에서만 추적용인 꼬리 (다른 곳에선 뜻이 있을 수 있어 사이트를 가린다)
+private let siteTrackingParams: [String: Set<String>] = [
+    "youtube.com": ["si", "feature", "pp"],
+    "youtu.be": ["si", "feature"],
+    "music.youtube.com": ["si", "feature"],
+    "open.spotify.com": ["si", "context"],
+    "x.com": ["s", "t"],
+    "twitter.com": ["s", "t"],
+    "instagram.com": ["igsh", "img_index"],
+    "threads.net": ["igshid", "xmt", "slof"],
+    "threads.com": ["igshid", "xmt", "slof"],
+    "linkedin.com": ["trk", "trackingid", "lipi"],
+    "coupang.com": ["src", "spec", "addtag", "ctag", "lptag", "itime", "pageType", "pageValue", "wPcid", "wRef", "wTime", "redirect", "isAddedCart", "traceid", "requestid", "sourceType"],
+]
+
+/// 주소에서 utm_ 같은 추적 꼬리와 글자 위치 조각(#:~:text=)을 뗀다
+public func cleanURL(_ url: String) -> String {
+    guard var c = URLComponents(string: url) else { return url }
+    let host = domain(of: url)
+    let site = siteTrackingParams.first { host == $0.key || host.hasSuffix("." + $0.key) }?.value ?? []
+    if let items = c.queryItems {
+        let kept = items.filter { q in
+            let n = q.name.lowercased()
+            return !n.hasPrefix("utm_") && !trackingParams.contains(n) && !site.contains(q.name) && !site.contains(n)
+        }
+        if kept.count != items.count { c.queryItems = kept.isEmpty ? nil : kept }
+    }
+    if let f = c.fragment, f.hasPrefix(":~:") { c.fragment = nil }
+    return c.string ?? url
+}
+
+/// 글 안의 모든 주소 (같은 건 한 번만)
+public func findURLs(in text: String) -> [String] {
+    guard let re = try? NSRegularExpression(pattern: #"https?://[^\s<>"'）)\]]+"#, options: [.caseInsensitive]) else { return [] }
+    let ns = text as NSString
+    var out: [String] = []
+    for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+        var raw = ns.substring(with: m.range)
+        while let last = raw.last, ".,!?;:".contains(last) { raw.removeLast() }
+        if let u = normalizeURL(raw), !out.contains(u) { out.append(u) }
+    }
+    return out
 }
 
 /// 공유로 받은 글 안에서 첫 주소를 찾는다

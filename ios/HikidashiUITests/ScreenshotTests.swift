@@ -104,4 +104,21 @@ final class ScreenshotTests: XCTestCase {
         snap("10-reader")
         app.buttons["리더 닫기"].tap()
     }
+
+    func testHighlightsAndMemoLinks() {
+        app.launch()
+        XCTAssertTrue(app.staticTexts["장보기"].waitForExistence(timeout: 10))
+        app.buttons["서랍 열기"].firstMatch.tap()
+        app.buttons["하이라이트"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["하이라이트"].waitForExistence(timeout: 3))
+        sleep(1)
+        snap("11-highlights")
+
+        app.buttons["서랍 열기"].firstMatch.tap()
+        app.buttons["전체"].firstMatch.tap()
+        app.staticTexts["오사카 메모"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["메모 닫기"].waitForExistence(timeout: 5))
+        sleep(3)
+        snap("12-memo-links")
+    }
 }

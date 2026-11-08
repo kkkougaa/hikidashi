@@ -45,6 +45,9 @@ final class LibraryStore {
     var reader: ReaderRequest?
     /// 여러 개 고르는 중이면 고른 항목 id (nil 이면 고르는 중 아님)
     var selection: Set<String>?
+    /// 최근에 연 항목 (이 기기에만, 최신이 앞)
+    private(set) var recentIDs: [String] = UserDefaults.standard.stringArray(forKey: "recentIDs") ?? []
+    private(set) var checkingLinks = false
     private var articles: [String: ReaderArticle] = [:]
 
     private let fileURL: URL
@@ -78,6 +81,7 @@ final class LibraryStore {
         guard !entries.isEmpty else { return }
         let fallback = defaultFolderId
         var added = 0
+        var newIDs: [String] = []
         change { lib in
             for e in entries {
                 if let u = e.draft.url, lib.contains(url: u) { continue }
@@ -88,11 +92,12 @@ final class LibraryStore {
                 }
                 var d = e.draft.draft(folderId: folder)
                 d.tags = (e.tags ?? []).map(normalizeTag).filter { !$0.isEmpty }
-                lib.addItem(d, now: e.sharedAt)
+                newIDs.append(lib.addItem(d, now: e.sharedAt).id)
                 added += 1
             }
         }
         if added > 0 { show(added == 1 ? "공유한 항목을 넣었어요" : "공유한 항목 \(added)개를 넣었어요") }
+        newIDs.forEach(prefetchArticle)
     }
 
     /// 새 항목이 들어갈 기본 서랍 (설정에서 고른다)
@@ -124,6 +129,8 @@ final class LibraryStore {
             case .unfiled: inScope = library.folder(i.folderId) == nil
             case .folder(let id): inScope = i.folderId == id
             case .tag(let t): inScope = i.tags.contains(t)
+            case .highlights: inScope = !i.highlights.isEmpty
+            case .broken: inScope = i.brokenAt != nil
             }
             guard inScope else { return false }
             guard !q.isEmpty else { return true }
@@ -138,6 +145,8 @@ final class LibraryStore {
         case .unfiled: "미분류"
         case .folder(let id): folder(id)?.name ?? "서랍"
         case .tag(let t): "#\(t)"
+        case .highlights: "하이라이트"
+        case .broken: "열리지 않는 링크"
         }
     }
 
@@ -156,6 +165,7 @@ final class LibraryStore {
     // MARK: 항목
 
     func open(_ item: Item) {
+        markOpened(item)
         guard item.kind == .link, let s = item.url, let url = URL(string: s) else { memoID = item.id; return }
         // 설정에서 "리더 모드 먼저" 면 글은 리더로, X·유튜브는 원래 화면으로
         if UserDefaults.standard.string(forKey: "linkOpen") != "safari", supportsReader(s) {
@@ -166,15 +176,76 @@ final class LibraryStore {
     }
 
     func openInSafari(_ item: Item) {
+        markOpened(item)
         if let s = item.url, let url = URL(string: s) { webPage = WebPage(url: url) }
     }
 
-    /// 리더 본문 (한 번 받은 건 기억한다)
-    func article(for url: String) async -> ReaderArticle? {
-        if let a = articles[url] { return a }
-        let a = await fetcher.fetchArticle(url)
-        if let a { articles[url] = a }
+    private func markOpened(_ item: Item) {
+        recentIDs.removeAll { $0 == item.id }
+        recentIDs.insert(item.id, at: 0)
+        recentIDs = Array(recentIDs.prefix(12))
+        UserDefaults.standard.set(recentIDs, forKey: "recentIDs")
+    }
+
+    /// 최근 연 항목 (지운 건 빼고)
+    var recentItems: [Item] { recentIDs.compactMap { item($0) } }
+
+    /// 리더 본문. 기기에 저장해 둔 게 있으면 그걸, 없으면 받아서 저장한다 (원본이 사라져도 읽게)
+    func article(for item: Item) async -> ReaderArticle? {
+        if let a = articles[item.id] ?? ArticleDisk.load(item.id) {
+            articles[item.id] = a
+            return a
+        }
+        guard let url = item.url, var a = await fetcher.fetchArticle(url) else { return nil }
+        a.savedAt = .now
+        articles[item.id] = a
+        ArticleDisk.save(a, id: item.id)
         return a
+    }
+
+    /// 새로 넣은 글은 본문을 미리 받아 둔다 (설정에서 끌 수 있다)
+    func prefetchArticle(_ id: String) {
+        guard UserDefaults.standard.object(forKey: "saveArticles") as? Bool ?? true,
+              let it = item(id), it.kind == .link, supportsReader(it.url), !ArticleDisk.has(id) else { return }
+        Task { _ = await article(for: it) }
+    }
+
+    func toggleHighlight(_ item: Item, text: String) {
+        change(false) { $0.toggleHighlight(item.id, text: text) }
+    }
+
+    // MARK: 링크 점검
+
+    var lastLinkCheck: Date? { UserDefaults.standard.object(forKey: "lastLinkCheck") as? Date }
+
+    /// 오래 점검 안 한 링크부터 조금씩 (한 번에 40개, 4개씩 동시에)
+    func checkLinks(force: Bool = false) {
+        guard !checkingLinks else { return }
+        if !force, let last = lastLinkCheck, Date().timeIntervalSince(last) < 86_400 { return }
+        let targets = library.liveItems.filter { force ? $0.kind == .link : needsCheck($0) }
+            .sorted { ($0.checkedAt ?? 0) < ($1.checkedAt ?? 0) }
+            .prefix(force ? 200 : 40)
+            .compactMap { it in it.url.map { (it.id, $0) } }
+        guard !targets.isEmpty else { return }
+        checkingLinks = true
+        let before = library.broken.count
+        Task {
+            let fetcher = self.fetcher
+            var results: [(String, LinkHealth)] = []
+            await withTaskGroup(of: (String, LinkHealth).self) { group in
+                var it = targets.makeIterator()
+                for _ in 0..<4 { if case let (id, url)? = it.next() { group.addTask { (id, await fetcher.check(url)) } } }
+                for await r in group {
+                    results.append(r)
+                    if case let (id, url)? = it.next() { group.addTask { (id, await fetcher.check(url)) } }
+                }
+            }
+            change(false) { lib in for (id, h) in results { lib.recordCheck(id, h) } }
+            UserDefaults.standard.set(Date(), forKey: "lastLinkCheck")
+            checkingLinks = false
+            let now = library.broken.count
+            if now > before { show("열리지 않는 링크 \(now - before)개를 찾았어요") } else if force { show("링크 \(results.count)개를 점검했어요") }
+        }
     }
 
     // MARK: 여러 개 고르기
@@ -226,7 +297,11 @@ final class LibraryStore {
         bulk("\(n)개 삭제함") { lib, id in lib.remove(id) }
     }
 
-    func add(_ d: ItemDraft) { change { $0.addItem(d) } }
+    func add(_ d: ItemDraft) {
+        var id = ""
+        change { id = $0.addItem(d).id }
+        prefetchArticle(id)
+    }
     func apply(_ d: ItemDraft, to id: String) { change { $0.apply(d, to: id) }; show("고쳤어요") }
     func toggleStar(_ item: Item) { change { $0.toggleStar(item.id) } }
 
@@ -275,6 +350,16 @@ final class LibraryStore {
 
     func fetchInfo(_ url: String) async -> PageInfo? { await fetcher.fetch(url) }
 
+    private var previews: [String: PageInfo] = [:]
+
+    /// 메모 속 링크 미리보기 (한 번 받은 건 기억)
+    func previewInfo(_ url: String) async -> PageInfo? {
+        if let p = previews[url] { return p }
+        let p = await fetcher.fetch(url)
+        if let p { previews[url] = p }
+        return p
+    }
+
     /// + 버튼을 끌어올렸다 놓으면: 클립보드 링크를 바로 넣고 정보는 받는 대로 채운다
     func quickAddFromPasteboard(into folder: String? = nil) {
         let folderId = folder ?? defaultFolderId
@@ -299,6 +384,7 @@ final class LibraryStore {
                     if info == nil, it.title.isEmpty, it.note.isEmpty { it.title = guessTitle(url) }
                 }
             }
+            prefetchArticle(id)
         }
     }
 
@@ -334,8 +420,32 @@ final class LibraryStore {
         lib.addItem(ItemDraft(kind: .memo, title: "장보기", note: "계란 / 대파 / 버터\n신김치", emoji: "🛒", folderId: f[2].id, tags: ["마트"]), now: now - 3_600_000)
         lib.addItem(ItemDraft(kind: .link, url: "https://x.com/elonmusk/status/1585341984679469056", note: "Entering Twitter HQ – let that sink in!", siteName: "X · @elonmusk", folderId: f[0].id), now: now - day)
         lib.addItem(ItemDraft(kind: .link, url: "https://www.youtube.com/watch?v=jNQXAC9IVRw", title: "Me at the zoo", image: "https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg", siteName: "YouTube", folderId: f[0].id, tags: ["영상"]), now: now - 3 * day)
-        lib.addItem(ItemDraft(kind: .memo, title: "오사카 메모", note: "도톤보리 → 쿠로몬 시장은 아침에", emoji: "✈️", tags: ["여행"]), now: now - 12 * day)
+        lib.addItem(ItemDraft(kind: .memo, title: "오사카 메모", note: "도톤보리 → 쿠로몬 시장은 아침에\n영상 참고 https://www.youtube.com/watch?v=jNQXAC9IVRw", emoji: "✈️", tags: ["여행"]), now: now - 12 * day)
         if let star = lib.liveItems.first(where: { $0.kind == .memo }) { lib.toggleStar(star.id) }
+        if let css = lib.liveItems.first(where: { $0.title == "CSS 그리드 레이아웃" }) {
+            lib.toggleHighlight(css.id, text: "CSS 그리드 레이아웃은 페이지를 여러 주요 영역으로 나누거나, 요소 간의 관계를 정의하는 데 탁월합니다.")
+        }
         return lib
+    }
+}
+
+/// 리더 본문을 기기에 저장해 둔다 (Application Support/articles/항목id.json). 동기화하지 않는다
+enum ArticleDisk {
+    static let folder: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("articles", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private static func file(_ id: String) -> URL { folder.appendingPathComponent(id + ".json") }
+    static func has(_ id: String) -> Bool { FileManager.default.fileExists(atPath: file(id).path) }
+    static func load(_ id: String) -> ReaderArticle? { (try? Data(contentsOf: file(id))).flatMap { try? JSONDecoder().decode(ReaderArticle.self, from: $0) } }
+    static func save(_ a: ReaderArticle, id: String) { (try? JSONEncoder().encode(a)).map { try? $0.write(to: file(id), options: .atomic) } }
+
+    static var count: Int { (try? FileManager.default.contentsOfDirectory(atPath: folder.path).count) ?? 0 }
+
+    static func clear() {
+        try? FileManager.default.removeItem(at: folder)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     }
 }

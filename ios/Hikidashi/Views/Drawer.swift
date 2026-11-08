@@ -7,6 +7,7 @@ struct DrawerView: View {
     let selected: Scope
     var onSelect: (Scope) -> Void
     var onSettings: () -> Void
+    var onOpen: (Item) -> Void = { _ in }
     @Environment(LibraryStore.self) private var store
     @State private var editing: FolderEdit?
 
@@ -33,6 +34,28 @@ struct DrawerView: View {
                 row(.starred, "즐겨찾기", icon: "star.fill", color: FolderColor.mustard.color, count: store.allItems.filter(\.starred).count)
                 let unfiled = store.library.unfiled.count
                 if unfiled > 0 { row(.unfiled, "미분류", icon: "archivebox.fill", color: unfiledColor, count: unfiled) }
+                let marked = store.library.highlighted.count
+                if marked > 0 { row(.highlights, "하이라이트", icon: "highlighter", color: Color(hex: "#C99700"), count: marked) }
+                let broken = store.library.broken.count
+                if broken > 0 { row(.broken, "열리지 않는 링크", icon: "link", color: .red, count: broken) }
+
+                // 최근 연 항목
+                let recent = Array(store.recentItems.prefix(5))
+                if !recent.isEmpty {
+                    header("최근 연 항목") { EmptyView() }
+                    ForEach(recent) { it in
+                        Button { onOpen(it) } label: {
+                            HStack(spacing: 12) {
+                                ItemIcon(item: it, folder: store.folder(it.folderId), size: 28)
+                                Text(it.displayTitle).font(.subheadline).lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10).frame(height: 42)
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
 
                 header("서랍") {
                     Button { editing = FolderEdit(folder: nil) } label: {
@@ -110,6 +133,9 @@ struct SettingsScreen: View {
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("viewMode") private var viewMode = "list"
     @AppStorage("linkOpen") private var linkOpen = "reader"
+    @AppStorage("saveArticles") private var saveArticles = true
+    @State private var cacheSize = 0
+    @State private var articleCount = 0
     @AppStorage(SharedLibrary.defaultFolderKey) private var defaultFolder = ""
     @AppStorage("lastBackupAt") private var lastBackup: Double = 0
     @State private var backupURL: URL?
@@ -134,7 +160,28 @@ struct SettingsScreen: View {
                         Text("리더 모드").tag("reader")
                         Text("사파리").tag("safari")
                     }
-                } footer: { Text("리더 모드는 광고와 메뉴 없이 본문만 보여줘요. X 와 유튜브는 늘 원래 화면으로 열어요. 길게 누르면 둘 다 고를 수 있어요.") }
+                    Toggle("새 글 본문 미리 저장", isOn: $saveArticles)
+                } footer: { Text("리더 모드는 광고와 메뉴 없이 본문만 보여줘요. X 와 유튜브는 늘 원래 화면으로 열어요. 본문을 저장해 두면 원본이 지워져도, 인터넷이 없어도 읽을 수 있어요.") }
+                Section {
+                    Button { store.checkLinks(force: true) } label: {
+                        HStack {
+                            Label("지금 링크 점검", systemImage: "stethoscope")
+                            Spacer()
+                            if store.checkingLinks { ProgressView() }
+                        }
+                    }
+                    .disabled(store.checkingLinks)
+                    LabeledContent("열리지 않는 링크", value: "\(store.library.broken.count)개")
+                    if let last = store.lastLinkCheck {
+                        LabeledContent("마지막 점검", value: last.formatted(.relative(presentation: .named)))
+                    }
+                } header: { Text("링크 점검") } footer: { Text("하루에 한 번, 일주일 넘게 안 본 링크를 조금씩 확인해요. 지워진 페이지(404)만 ‘안 열림’ 으로 표시하고, 잠깐 막힌 건 건드리지 않아요.") }
+                Section("저장 공간") {
+                    LabeledContent("썸네일", value: ByteCountFormatter.string(fromByteCount: Int64(cacheSize), countStyle: .file))
+                    LabeledContent("저장한 본문", value: "\(articleCount)개")
+                    Button("썸네일 비우기", role: .destructive) { ImageCache.clear(); cacheSize = 0 }
+                    Button("저장한 본문 비우기", role: .destructive) { ArticleDisk.clear(); articleCount = 0 }
+                }
                 Section {
                     Picker("기본 서랍", selection: $defaultFolder) {
                         Text("첫 번째 서랍").tag("")
@@ -177,7 +224,11 @@ struct SettingsScreen: View {
                     Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("설정 닫기")
                 }
             }
-            .task { backupURL = try? store.writeBackupFile() }
+            .task {
+                backupURL = try? store.writeBackupFile()
+                cacheSize = await Task.detached { ImageCache.diskSize() }.value
+                articleCount = ArticleDisk.count
+            }
             .onChange(of: store.allItems.count) { backupURL = try? store.writeBackupFile() }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
                 if case .success(let url) = result { store.importBackup(from: url) }

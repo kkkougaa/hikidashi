@@ -1,7 +1,7 @@
 import Foundation
 
 /// 리더 모드 한 덩어리
-public enum ReaderBlock: Equatable, Sendable {
+public enum ReaderBlock: Equatable, Sendable, Codable {
     case heading(String, level: Int)
     case paragraph(String)
     case quote(String)
@@ -11,17 +11,27 @@ public enum ReaderBlock: Equatable, Sendable {
 }
 
 /// 리더 모드로 보여줄 글
-public struct ReaderArticle: Equatable, Sendable {
+public struct ReaderArticle: Equatable, Sendable, Codable {
     public var title: String?
     public var siteName: String?
     public var image: String?
     public var blocks: [ReaderBlock]
+    /// 받아 둔 때 (저장한 본문을 보여줄 때 쓴다)
+    public var savedAt: Millis?
 
     public init(title: String? = nil, siteName: String? = nil, image: String? = nil, blocks: [ReaderBlock] = []) {
         self.title = title
         self.siteName = siteName
         self.image = image
         self.blocks = blocks
+    }
+
+    /// 블록 안의 글 (하이라이트 비교용)
+    public static func text(of block: ReaderBlock) -> String? {
+        switch block {
+        case .heading(let t, _), .paragraph(let t), .quote(let t), .listItem(let t), .code(let t): t
+        case .image: nil
+        }
     }
 
     /// 본문 글자 수 (너무 짧으면 리더로 보여줄 글이 아니다)

@@ -1,3 +1,4 @@
+import CryptoKit
 import SwiftUI
 import HikidashiCore
 
@@ -20,24 +21,12 @@ struct ItemIcon: View {
                     .frame(width: size, height: size)
                     .background(Color(.secondarySystemFill), in: .rect(cornerRadius: corner))
             } else if item.kind == .link, let image = item.image, !imageFailed, let url = URL(string: image) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let img): img.resizable().scaledToFill()
-                    case .failure: Color.clear.onAppear { imageFailed = true }
-                    default: Color(.secondarySystemFill)
-                    }
-                }
+                CachedImage(url: url.absoluteString, onFail: { imageFailed = true }) { $0.resizable().scaledToFill() } placeholder: { Color(.secondarySystemFill) }
                 .frame(width: size, height: size)
                 .clipShape(.rect(cornerRadius: corner))
                 .overlay(RoundedRectangle(cornerRadius: corner).strokeBorder(.primary.opacity(0.08)))
             } else if item.kind == .link, !logoFailed, let logo = logoURL(item.url, size: 128).flatMap(URL.init(string:)) {
-                AsyncImage(url: logo) { phase in
-                    switch phase {
-                    case .success(let img): img.resizable().scaledToFit().padding(size * 0.2)
-                    case .failure: Color.clear.onAppear { logoFailed = true }
-                    default: Color.clear
-                    }
-                }
+                CachedImage(url: logo.absoluteString, onFail: { logoFailed = true }) { $0.resizable().scaledToFit().padding(size * 0.2) } placeholder: { Color.clear }
                 .frame(width: size, height: size)
                 .background(Color(.systemBackground), in: .rect(cornerRadius: corner))
                 .overlay(RoundedRectangle(cornerRadius: corner).strokeBorder(.primary.opacity(0.1)))
@@ -66,11 +55,9 @@ struct SourceChip: View {
     var body: some View {
         let host = domain(of: url)
         HStack(spacing: 5) {
-            AsyncImage(url: logoURL(url, size: 32).flatMap(URL.init(string:))) { phase in
-                if case .success(let img) = phase { img.resizable().scaledToFit() } else {
-                    Text(host.prefix(1).uppercased()).font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
-                        .frame(width: 14, height: 14).background(Color.secondary, in: .rect(cornerRadius: 3))
-                }
+            CachedImage(url: logoURL(url, size: 32) ?? "") { $0.resizable().scaledToFit() } placeholder: {
+                Text(host.prefix(1).uppercased()).font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 14, height: 14).background(Color.secondary, in: .rect(cornerRadius: 3))
             }
             .frame(width: 14, height: 14)
             .clipShape(.rect(cornerRadius: 3))
@@ -109,6 +96,7 @@ struct MetaRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            if item.brokenAt != nil { BrokenBadge() }
             if showFolder { FolderPill(folder: folder) }
             if item.kind == .link, let url = item.url { SourceChip(url: url, siteName: item.siteName) }
             ForEach(item.tags, id: \.self) { t in
@@ -149,30 +137,49 @@ struct FlowLayout: Layout {
     }
 }
 
-/// 그림을 받아 두고 비율도 기억한다 (벽돌 쌓기 배치가 덜 흔들리게)
+/// 그림을 받아 두고 비율도 기억한다. 줄인 그림을 기기(Caches/thumbs)에 저장해서 다음엔 인터넷 없이 보여준다
 enum ImageCache {
     private static let images = NSCache<NSString, UIImage>()
     @MainActor private static var ratios: [String: CGFloat] = [:]
 
-    static func image(_ url: String) -> UIImage? { images.object(forKey: url as NSString) }
+    static let folder: URL = {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("thumbs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private static func file(_ url: String) -> URL {
+        let digest = SHA256.hash(data: Data(url.utf8)).map { String(format: "%02x", $0) }.joined()
+        return folder.appendingPathComponent(digest + ".jpg")
+    }
+
+    static func image(_ url: String) -> UIImage? {
+        if let hit = images.object(forKey: url as NSString) { return hit }
+        guard let data = try? Data(contentsOf: file(url)), let img = UIImage(data: data) else { return nil }
+        images.setObject(img, forKey: url as NSString)
+        return img
+    }
 
     /// 세로 ÷ 가로. 너무 길거나 납작하지 않게 자른다
     @MainActor static func ratio(_ url: String?) -> CGFloat? { url.flatMap { ratios[$0] } }
 
-    @MainActor static func store(_ img: UIImage, for url: String) {
+    @MainActor static func remember(_ img: UIImage, for url: String) {
         images.setObject(img, forKey: url as NSString)
         if img.size.width > 0 { ratios[url] = min(1.6, max(0.45, img.size.height / img.size.width)) }
     }
 
     static func load(_ url: String) async -> UIImage? {
-        if let hit = image(url) { return hit }
+        if let hit = image(url) {
+            await remember(hit, for: url)
+            return hit
+        }
         guard let u = URL(string: url) else { return nil }
         var req = URLRequest(url: u, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 15)
         req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true,
               let img = UIImage(data: data) else { return nil }
-        // 큰 그림은 줄여서 메모리를 아낀다
+        // 큰 그림은 줄여서 메모리와 저장 공간을 아낀다
         let maxSide: CGFloat = 900
         let s = img.size
         let small: UIImage
@@ -182,8 +189,37 @@ enum ImageCache {
         } else {
             small = img
         }
-        await store(small, for: url)
+        if let jpg = small.jpegData(compressionQuality: 0.8) { try? jpg.write(to: file(url), options: .atomic) }
+        await remember(small, for: url)
         return small
+    }
+
+    /// 저장된 그림 크기 (바이트)
+    static func diskSize() -> Int {
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.fileSizeKey])) ?? []
+        return files.reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+    }
+
+    /// 너무 커지면 오래된 것부터 지운다
+    static func trim(maxBytes: Int = 200_000_000) {
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+        var files = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: Array(keys))) ?? []).compactMap { u -> (URL, Int, Date)? in
+            guard let v = try? u.resourceValues(forKeys: keys) else { return nil }
+            return (u, v.fileSize ?? 0, v.contentModificationDate ?? .distantPast)
+        }
+        var total = files.reduce(0) { $0 + $1.1 }
+        guard total > maxBytes else { return }
+        files.sort { $0.2 < $1.2 }
+        for f in files where total > maxBytes {
+            try? FileManager.default.removeItem(at: f.0)
+            total -= f.1
+        }
+    }
+
+    static func clear() {
+        images.removeAllObjects()
+        try? FileManager.default.removeItem(at: folder)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     }
 }
 
@@ -209,5 +245,44 @@ struct RemoteImage: View {
                 if let img = await ImageCache.load(url) { withAnimation(.easeOut(duration: 0.2)) { image = img } } else { onFail() }
             }
             .accessibilityHidden(true)
+    }
+}
+
+/// 기기에 저장해 두는 그림 (한 번 받으면 인터넷 없이도 보인다)
+struct CachedImage<Content: View, Placeholder: View>: View {
+    let url: String
+    var onFail: () -> Void = {}
+    let content: (Image) -> Content
+    let placeholder: () -> Placeholder
+    @State private var image: UIImage?
+
+    init(url: String, onFail: @escaping () -> Void = {}, @ViewBuilder content: @escaping (Image) -> Content, @ViewBuilder placeholder: @escaping () -> Placeholder) {
+        self.url = url
+        self.onFail = onFail
+        self.content = content
+        self.placeholder = placeholder
+        _image = State(initialValue: ImageCache.image(url))
+    }
+
+    var body: some View {
+        Group {
+            if let image { content(Image(uiImage: image)) } else { placeholder() }
+        }
+        .task(id: url) {
+            guard image == nil, !url.isEmpty else { return }
+            if let img = await ImageCache.load(url) { image = img } else { onFail() }
+        }
+    }
+}
+
+/// 링크가 열리지 않을 때 붙는 표
+struct BrokenBadge: View {
+    var body: some View {
+        Label("안 열림", systemImage: "link.badge.plus")
+            .labelStyle(.titleOnly)
+            .font(.caption.weight(.bold)).foregroundStyle(.white)
+            .padding(.horizontal, 7).frame(height: 22)
+            .background(Color.red.opacity(0.85), in: .rect(cornerRadius: 6))
+            .accessibilityLabel("링크가 열리지 않아요")
     }
 }

@@ -128,6 +128,12 @@ public struct Item: Codable, Identifiable, Hashable, Sendable {
     public var createdAt: Millis
     public var updatedAt: Millis
     public var deletedAt: Millis?
+    /// 리더에서 형광펜 친 문단들
+    public var highlights: [String] = []
+    /// 링크가 열리지 않는 걸 처음 알게 된 때 (열리면 nil)
+    public var brokenAt: Millis?
+    /// 링크 점검을 마지막으로 한 때
+    public var checkedAt: Millis?
 
     public init(id: String = newID(), kind: ItemKind, url: String? = nil, title: String = "", note: String = "", image: String? = nil, siteName: String? = nil, emoji: String? = nil, folderId: String? = nil, tags: [String] = [], starred: Bool = false, createdAt: Millis = .now, updatedAt: Millis? = nil, deletedAt: Millis? = nil) {
         self.id = id
@@ -146,7 +152,7 @@ public struct Item: Codable, Identifiable, Hashable, Sendable {
         self.deletedAt = deletedAt
     }
 
-    enum CodingKeys: String, CodingKey { case id, kind, url, title, note, image, siteName, emoji, folderId, tags, starred, createdAt, updatedAt, deletedAt }
+    enum CodingKeys: String, CodingKey { case id, kind, url, title, note, image, siteName, emoji, folderId, tags, starred, createdAt, updatedAt, deletedAt, highlights, brokenAt, checkedAt }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -164,6 +170,9 @@ public struct Item: Codable, Identifiable, Hashable, Sendable {
         createdAt = try c.decodeNumber(forKey: .createdAt)
         updatedAt = try c.decodeNumber(forKey: .updatedAt)
         deletedAt = try c.decodeNumberIfPresent(forKey: .deletedAt)
+        highlights = (try? c.decodeIfPresent([String].self, forKey: .highlights)) ?? []
+        brokenAt = try? c.decodeNumberIfPresent(forKey: .brokenAt)
+        checkedAt = try? c.decodeNumberIfPresent(forKey: .checkedAt)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -182,6 +191,9 @@ public struct Item: Codable, Identifiable, Hashable, Sendable {
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
         try c.encode(deletedAt, forKey: .deletedAt)
+        if !highlights.isEmpty { try c.encode(highlights, forKey: .highlights) }
+        try c.encodeIfPresent(brokenAt, forKey: .brokenAt)
+        try c.encodeIfPresent(checkedAt, forKey: .checkedAt)
     }
 
     /// 목록 제목: 제목이 없으면 내용 첫 줄, 그것도 없으면 도메인

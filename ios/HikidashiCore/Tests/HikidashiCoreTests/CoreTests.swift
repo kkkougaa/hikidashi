@@ -312,3 +312,52 @@ final class ReaderTests: XCTestCase {
         XCTAssertFalse(supportsReader(nil))
     }
 }
+
+final class NewFieldTests: XCTestCase {
+    func testCleanURL() {
+        XCTAssertEqual(normalizeURL("https://ex.com/a?utm_source=x&id=3&fbclid=abc"), "https://ex.com/a?id=3")
+        XCTAssertEqual(normalizeURL("https://ex.com/a?utm_medium=m"), "https://ex.com/a")
+        XCTAssertEqual(normalizeURL("https://youtu.be/jNQXAC9IVRw?si=abcd&t=10"), "https://youtu.be/jNQXAC9IVRw?t=10")
+        XCTAssertEqual(normalizeURL("https://x.com/a/status/1585341984679469056?s=20&t=xyz"), "https://x.com/a/status/1585341984679469056")
+        // 다른 사이트의 s, t 는 그대로 둔다
+        XCTAssertEqual(normalizeURL("https://ex.com/search?s=css&t=2"), "https://ex.com/search?s=css&t=2")
+        XCTAssertEqual(normalizeURL("https://ex.com/a#:~:text=hello"), "https://ex.com/a")
+        XCTAssertEqual(normalizeURL("https://ex.com/a#section"), "https://ex.com/a#section")
+    }
+
+    func testFindURLs() {
+        XCTAssertEqual(findURLs(in: "볼 것: https://a.com/x, 그리고 (https://b.com/y). 또 https://a.com/x"), ["https://a.com/x", "https://b.com/y"])
+    }
+
+    func testHighlightAndCheckFields() throws {
+        var lib = Library()
+        let it = lib.addItem(ItemDraft(kind: .link, url: "https://ex.com/a"), now: 1)
+        lib.toggleHighlight(it.id, text: "문단", now: 2)
+        XCTAssertEqual(lib.highlighted.map(\.id), [it.id])
+        lib.recordCheck(it.id, .broken, now: 3)
+        XCTAssertEqual(lib.item(it.id)?.brokenAt, 3)
+        XCTAssertEqual(lib.item(it.id)?.updatedAt, 3)
+        lib.recordCheck(it.id, .broken, now: 9)
+        XCTAssertEqual(lib.item(it.id)?.updatedAt, 3, "같은 결과면 수정 시각은 그대로")
+        XCTAssertEqual(lib.item(it.id)?.checkedAt, 9)
+        lib.recordCheck(it.id, .unknown, now: 10)
+        XCTAssertEqual(lib.item(it.id)?.checkedAt, 9)
+        // 저장했다 읽어도 남는다
+        let back = try parseBackup(lib.backup().encoded())
+        XCTAssertEqual(back.items.first?.highlights, ["문단"])
+        XCTAssertEqual(back.items.first?.brokenAt, 3)
+        lib.toggleHighlight(it.id, text: "문단", now: 11)
+        XCTAssertTrue(lib.highlighted.isEmpty)
+        XCTAssertFalse(needsCheck(lib.item(it.id)!, now: 9 + 86_400_000))
+        XCTAssertTrue(needsCheck(lib.item(it.id)!, now: 9 + 8 * 86_400_000))
+    }
+
+    func testClassify() {
+        XCTAssertEqual(classifyLink(status: 200), .ok)
+        XCTAssertEqual(classifyLink(status: 301), .ok)
+        XCTAssertEqual(classifyLink(status: 404), .broken)
+        XCTAssertEqual(classifyLink(status: 403), .unknown)
+        XCTAssertEqual(classifyLink(status: nil, error: .cannotFindHost), .broken)
+        XCTAssertEqual(classifyLink(status: nil, error: .timedOut), .unknown)
+    }
+}

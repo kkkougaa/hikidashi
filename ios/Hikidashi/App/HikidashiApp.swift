@@ -66,6 +66,9 @@ struct RootView: View {
                 }, onSettings: {
                     setDrawer(false)
                     settingsOpen = true
+                }, onOpen: { it in
+                    setDrawer(false)
+                    store.open(it)
                 })
                 .frame(width: width)
                 .frame(maxHeight: .infinity)
@@ -113,7 +116,11 @@ struct RootView: View {
         .sheet(item: $store.reader) { ReaderView(item: $0.item) }
         .fullScreenCover(item: $store.webPage) { SafariView(url: $0.url).ignoresSafeArea() }
         .preferredColorScheme(Appearance(rawValue: appearance)?.scheme)
-        .onChange(of: scenePhase) { _, phase in if phase == .active { store.drainShareInbox() } }
+        .onChange(of: scenePhase) { _, phase in if phase == .active {
+                store.drainShareInbox()
+                store.checkLinks()
+                Task.detached(priority: .background) { ImageCache.trim() }
+            } }
         .onChange(of: store.folders.map(\.id)) { _, ids in
             // 보고 있던 서랍이 지워지면 전체로
             if case .folder(let id) = scope, !ids.contains(id) { scope = .all }
