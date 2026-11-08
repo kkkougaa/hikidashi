@@ -101,8 +101,16 @@ final class ScreenshotTests: XCTestCase {
 
         // 글 링크는 리더 모드로 열린다 (알림이 첫 줄을 가리니 사라진 뒤에)
         sleep(4)
-        app.staticTexts["CSS 그리드 레이아웃"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["리더 닫기"].waitForExistence(timeout: 5), "리더가 열려야 한다")
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'CSS 그리드 레이아웃'")).firstMatch
+        row.tap()
+        let opened = app.buttons["리더 닫기"].waitForExistence(timeout: 5)
+        // 실패하면 원인을 알 수 있게: 화면을 남기고 한 번 더 눌러 본다 (첫 탭이 먹히는지 확인용)
+        XCTAssertTrue(opened, "여러 개 고르기를 끝낸 뒤 첫 탭에 리더가 열려야 한다")
+        if !opened {
+            snap("10-reader-miss")
+            row.tap()
+            XCTAssertTrue(app.buttons["리더 닫기"].waitForExistence(timeout: 5), "두 번째 탭에는 리더가 열려야 한다")
+        }
         sleep(6) // 본문 받기
         snap("10-reader")
         app.buttons["리더 닫기"].tap()
