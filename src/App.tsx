@@ -13,9 +13,10 @@ import {Text} from '@astryxdesign/core/Text';
 import {useToast} from '@astryxdesign/core/Toast';
 import {uid, useLibrary} from './data/library';
 import {COLORS, type Folder, type Item, type ItemDraft} from './data/types';
-import {makeBackup} from './data/backup';
 import {getMeta, hasArticle, putArticle, setMeta} from './data/db';
-import {forgetFolder, permission, pickFolder, readAll, savedFolder, syncSupported, writeAll} from './data/sync';
+import {disconnect, dropboxConfigured, dropboxFile, finishLogin, isConnected, latestCursor, advanceCursor, NotConnected, startLogin, waitForChange} from './data/dropbox';
+import {syncFile} from './data/fileSync';
+import {deriveKey, newKdf, openEnvelope, readEnvelope, WrongPassphrase, type Kdf, type Vault} from './data/vault';
 import {domainOf, findUrl, guessTitle, normalizeUrl, parseTags} from './lib/format';
 import {fetchArticle, supportsReader} from './lib/reader';
 import {markRecent, usePref} from './lib/prefs';
@@ -263,52 +264,132 @@ export function App() {
     undoable(`‘${f.name}’ 서랍 삭제함`, undo);
   };
 
-  // MARK: 동기화 (iCloud Drive 폴더의 hikidashi-sync.json)
-  const [sync, setSync] = useState<SyncUi>({supported: syncSupported(), state: 'off'});
+  // MARK: 동기화 (드롭박스 앱 폴더의 잠근 파일 하나, docs/SPEC.md)
+  const [sync, setSync] = useState<SyncUi>({state: dropboxConfigured() ? 'loading' : 'unset'});
+  const vaultRef = useRef<Vault | null>(null);
   const syncingRef = useRef(false);
   const syncedSig = useRef('');
-  const runSync = useCallback(async (ask = false, loud = false) => {
-    if (syncingRef.current) return;
-    const dir = await savedFolder();
-    if (!dir) { setSync(s => ({...s, state: 'off'})); return; }
-    const perm = await permission(dir, ask).catch(() => 'denied' as const);
-    if (perm !== 'granted') { setSync(s => ({...s, state: 'ask', folder: dir.name})); return; }
+  const errText = (e: unknown, fallback: string) => e instanceof Error && e.message ? e.message : fallback;
+
+  /** 이 기기의 키·판 기록을 지운다 (연결을 끊거나 암호를 다시 받아야 할 때) */
+  const dropVault = useCallback(async () => {
+    vaultRef.current = null;
+    syncedSig.current = '';
+    await setMeta('vault', undefined);
+    await setMeta('syncRev', undefined);
+  }, []);
+
+  const runSync = useCallback(async (loud = false) => {
+    const vault = vaultRef.current;
+    if (syncingRef.current || !vault) return;
     syncingRef.current = true;
-    setSync(s => ({...s, state: 'syncing', folder: dir.name}));
+    setSync(s => ({...s, state: 'syncing'}));
     try {
-      const {backups, extras} = await readAll(dir);
-      let changed = 0;
-      for (const b of backups) { const r = lib.importBackup(b); changed += r.items + r.folders; }
+      const before = lib.allRecords();
+      const dirty = signature(before.items, before.folders) !== syncedSig.current;
+      const lastRev = await getMeta<string>('syncRev');
+      const r = await syncFile(dropboxFile, vault, b => { const x = lib.importBackup(b); return x.items + x.folders; }, lib.allRecords, {lastRev, dirty});
+      await setMeta('syncRev', r.rev ?? undefined);
       const {items, folders} = lib.allRecords();
-      await writeAll(dir, JSON.stringify(makeBackup(folders, items)), extras);
       syncedSig.current = signature(items, folders);
       const last = Date.now();
       await setMeta('lastSyncAt', last);
-      setSync(s => ({...s, state: 'idle', last, error: undefined}));
-      if (changed) notify(`다른 기기에서 ${changed}개를 가져왔어요`); else if (loud) notify('동기화했어요');
+      setSync({state: 'idle', last});
+      if (r.changed) notify(`다른 기기에서 ${r.changed}개를 가져왔어요`); else if (loud) notify('동기화했어요');
     } catch (e) {
-      setSync(s => ({...s, state: 'error', error: e instanceof Error ? e.message : '동기화하지 못했어요'}));
-      if (loud) notify('동기화하지 못했어요', 'error');
+      if (e instanceof WrongPassphrase) {
+        await dropVault();
+        setSync({state: 'key', fresh: false, error: '다른 기기에서 동기화 암호를 바꿨어요. 새 암호를 넣어주세요'});
+      } else if (e instanceof NotConnected) {
+        await dropVault();
+        setSync({state: 'off', error: e.message});
+        notify(e.message, 'error');
+      } else {
+        setSync(s => ({...s, state: 'error', error: errText(e, '동기화하지 못했어요')}));
+        if (loud) notify('동기화하지 못했어요', 'error');
+      }
     } finally {
       syncingRef.current = false;
     }
-  }, [lib, notify]);
+  }, [lib, notify, dropVault]);
+  const runSyncRef = useRef(runSync);
+  runSyncRef.current = runSync;
 
-  // 켤 때 저장된 폴더가 있으면 맞추고, 앱으로 돌아올 때마다 다시
+  // 켤 때: 드롭박스 로그인에서 돌아왔으면 마무리하고, 연결돼 있으면 바로 맞춘다. 앱으로 돌아올 때마다 다시
   useEffect(() => {
-    if (!lib.ready || !sync.supported) return;
+    if (!lib.ready) return;
+    void setMeta('syncDir', undefined); // 예전 iCloud Drive 폴더 방식의 흔적
+    if (!dropboxConfigured()) return;
     void (async () => {
-      const dir = await savedFolder();
-      if (!dir) return;
-      const last = await getMeta<number>('lastSyncAt');
-      setSync(s => ({...s, folder: dir.name, last, state: 'idle'}));
-      void runSync();
+      try {
+        const back = await finishLogin();
+        if (back === 'denied') notify('드롭박스에 연결하지 못했어요', 'error');
+        if (!(await isConnected())) { setSync({state: 'off'}); return; }
+        const v = await getMeta<Vault>('vault');
+        if (v) {
+          vaultRef.current = v;
+          setSync({state: 'idle', last: await getMeta<number>('lastSyncAt')});
+          void runSync(back === 'ok');
+        } else {
+          setSync({state: 'key', fresh: (await dropboxFile.rev()) === null});
+          if (back === 'ok') setSheet('settings');
+        }
+      } catch (e) {
+        if (e instanceof NotConnected) setSync({state: 'off'});
+        else setSync({state: 'error', error: errText(e, '드롭박스에 연결하지 못했어요')});
+      }
     })();
-    const onVisible = () => { if (document.visibilityState === 'visible') void runSync(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') void runSyncRef.current(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lib.ready]);
+
+  // 열려 있는 동안 다른 기기가 올리면 바로 받는다 (드롭박스 롱폴링)
+  const polling = !!vaultRef.current && (sync.state === 'idle' || sync.state === 'syncing' || sync.state === 'error');
+  useEffect(() => {
+    if (!polling) return;
+    const ctl = new AbortController();
+    const wait = (ms: number) => new Promise<void>(r => { const t = setTimeout(r, ms); ctl.signal.addEventListener('abort', () => { clearTimeout(t); r(); }); });
+    void (async () => {
+      let cursor: string | null = null;
+      while (!ctl.signal.aborted) {
+        if (document.visibilityState !== 'visible') { await wait(2000); continue; }
+        try {
+          cursor ??= await latestCursor();
+          const r = await waitForChange(cursor, ctl.signal);
+          if (r.changes) { cursor = await advanceCursor(cursor); await runSyncRef.current(); }
+          if (r.backoff) await wait(r.backoff * 1000);
+        } catch {
+          if (ctl.signal.aborted) break;
+          cursor = null;
+          await wait(30_000);
+        }
+      }
+    })();
+    return () => ctl.abort();
+  }, [polling]);
+
+  /** 동기화 암호를 받았을 때. 파일이 있으면 그 암호로 열리는지 확인하고, 없으면 새로 정한다. 틀리면 이유를 돌려준다 */
+  const onPassphrase = async (pass: string): Promise<string | null> => {
+    try {
+      const got = await dropboxFile.read();
+      const env = got ? readEnvelope(got.text) : null;
+      const kdf: Kdf = env ? env.kdf : newKdf();
+      const v: Vault = {key: await deriveKey(pass, kdf), kdf};
+      if (env) await openEnvelope(v, env);
+      await dropVault();
+      await setMeta('vault', v);
+      vaultRef.current = v;
+      setSync({state: 'idle'});
+      void runSync(true);
+      return null;
+    } catch (e) {
+      if (e instanceof WrongPassphrase) return '암호가 맞지 않아요';
+      if (e instanceof NotConnected) { setSync({state: 'off', error: e.message}); return e.message; }
+      return errText(e, '확인하지 못했어요');
+    }
+  };
 
   // 고치면 잠깐 기다렸다 맞춘다 (동기화로 바뀐 건 건너뜀)
   const rawRecords = lib.allRecords();
@@ -466,11 +547,16 @@ export function App() {
         onRemoveTag={t => { const prev = lib.removeTag(t); if (prev.length) undoable(`#${t} 태그를 항목 ${prev.length}개에서 뺐어요`, () => lib.restoreVersions(prev)); }}
         onEditFolders={() => { setSheet(null); afterSheet(() => setSheet('folders')); }}
         sync={sync}
-        onPickSync={async () => {
-          try { await pickFolder(); await runSync(true, true); } catch (e) { if ((e as DOMException).name !== 'AbortError') notify('폴더를 열지 못했어요', 'error'); }
-        }}
-        onSyncNow={() => void runSync(true, true)}
-        onForgetSync={async () => { await forgetFolder(); setSync(s => ({...s, state: 'off', folder: undefined, last: undefined})); notify('동기화를 끊었어요'); }} />
+        onConnect={() => void startLogin()}
+        onPassphrase={onPassphrase}
+        onSyncNow={() => void runSync(true)}
+        onDisconnect={async () => {
+          await disconnect();
+          await dropVault();
+          await setMeta('lastSyncAt', undefined);
+          setSync({state: 'off'});
+          notify('드롭박스 연결을 끊었어요');
+        }} />
     </div>
   );
 }

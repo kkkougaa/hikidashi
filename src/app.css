@@ -430,6 +430,14 @@ dialog:has(.sheet-float) .astryx-bottom-sheet { padding-bottom: 6px !important; 
 
 /* ── 설정 추가 ── */
 .set-row.static { cursor: default; }
+/* 동기화 암호 */
+.set-pass { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.set-pass .set-row { border-bottom: 0; }
+.set-input { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--color-background-surface); color: var(--color-text-primary); font: inherit; font-size: 16px; }
+.set-input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.set-error { margin: 0; font-size: 13px; color: light-dark(#C4231C, #FF6B63); }
+.set-submit { min-height: 44px; border: 0; border-radius: 10px; background: var(--color-accent); color: #fff; font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+.set-submit:disabled { opacity: 0.45; cursor: default; }
 .set-row.danger { color: light-dark(#C4231C, #FF6B63); }
 .set-row.split { gap: 4px; }
 .split-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }

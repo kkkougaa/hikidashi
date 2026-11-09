@@ -47,9 +47,15 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.kkkougaa.hikidashi
             CFBundleURLSchemes: [hikidashi]
+        # 드롭박스 동기화: 앱 키(비밀값 아님)는 빌드 설정 DROPBOX_APP_KEY 로 넣는다
+        DropboxAppKey: $(DROPBOX_APP_KEY)
+        # 닫혀 있을 때 가끔 맞추기 (백그라운드 새로 고침)
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [com.kkkougaa.hikidashi.sync]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kkkougaa.hikidashi
+        DROPBOX_APP_KEY: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         TARGETED_DEVICE_FAMILY: "1"

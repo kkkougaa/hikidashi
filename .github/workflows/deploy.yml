@@ -28,6 +28,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        env:
+          # 드롭박스 동기화 앱 키: 저장소 Settings → Secrets and variables → Actions → Variables 의 DROPBOX_APP_KEY
+          # (비밀값 아님, 없으면 동기화 꺼진 채로 배포)
+          VITE_DROPBOX_APP_KEY: ${{ vars.DROPBOX_APP_KEY }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist

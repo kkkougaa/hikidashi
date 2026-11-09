@@ -1,4 +1,5 @@
 import SwiftUI
+import BackgroundTasks
 import HikidashiCore
 
 @main
@@ -11,6 +12,11 @@ struct HikidashiApp: App {
         }
         return LibraryStore()
     }()
+
+    init() {
+        // 앱이 닫혀 있어도 iOS 가 가끔 깨워 주면 드롭박스와 맞춰 둔다
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: BackgroundSync.id, using: nil) { BackgroundSync.handle($0) }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -119,8 +125,14 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in if phase == .active {
                 store.drainShareInbox()
                 store.checkLinks()
-                Task { await store.syncNow() }
+                Task {
+                    await store.syncNow()
+                    store.startLiveSync()
+                }
                 Task.detached(priority: .background) { ImageCache.trim() }
+            } else if phase == .background {
+                store.stopLiveSync()
+                BackgroundSync.schedule()
             } }
         .onChange(of: store.folders.map(\.id)) { _, ids in
             // 보고 있던 서랍이 지워지면 전체로
@@ -161,5 +173,25 @@ struct RootView: View {
                 let close = v.translation.width < -width * 0.3 || v.predictedEndTranslation.width < -width * 0.5
                 withAnimation(.snappy(duration: 0.3)) { drawerOpen = !close; drag = 0 }
             }
+    }
+}
+
+/// 백그라운드 새로 고침: iOS 가 정한 때(보통 몇십 분~몇 시간 간격)에 한 번 맞춘다
+enum BackgroundSync {
+    static let id = "com.kkkougaa.hikidashi.sync"
+
+    static func schedule() {
+        let r = BGAppRefreshTaskRequest(identifier: id)
+        r.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60)
+        try? BGTaskScheduler.shared.submit(r)
+    }
+
+    static func handle(_ task: BGTask) {
+        schedule()
+        let work = Task { @MainActor in
+            await LibraryStore.current?.syncNow()
+            task.setTaskCompleted(success: true)
+        }
+        task.expirationHandler = { work.cancel() }
     }
 }

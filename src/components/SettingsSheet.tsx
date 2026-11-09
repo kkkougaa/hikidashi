@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from 'react';
-import {ChevronLeft, ChevronRight, Cloud, Download, FolderCog, Hash, RefreshCw, ShieldCheck, Trash2, Upload} from 'lucide-react';
+import {ChevronLeft, ChevronRight, Cloud, Download, FolderCog, Hash, KeyRound, RefreshCw, ShieldCheck, Trash2, Upload} from 'lucide-react';
 import {SegmentedControl, SegmentedControlItem} from '@astryxdesign/core/SegmentedControl';
 import {Switch} from '@astryxdesign/core/Switch';
 import {BottomSheet} from '@astryxdesign/core/BottomSheet';
@@ -33,15 +33,52 @@ async function saveFile(name: string, text: string): Promise<'shared' | 'downloa
 }
 
 export interface SyncUi {
-  supported: boolean;
-  /** off: 연결 안 함, ask: 권한을 다시 눌러 줘야 함 */
-  state: 'off' | 'ask' | 'idle' | 'syncing' | 'error';
-  folder?: string;
+  /** unset: 이 배포판에 드롭박스 설정이 없음, off: 연결 안 함, key: 동기화 암호가 필요함 */
+  state: 'unset' | 'loading' | 'off' | 'key' | 'idle' | 'syncing' | 'error';
+  /** key 일 때: 드롭박스에 파일이 아직 없어 새 암호를 정한다 */
+  fresh?: boolean;
   last?: number;
   error?: string;
 }
 
-export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, notify, folders, tags, onRenameTag, onRemoveTag, onEditFolders, sync, onPickSync, onSyncNow, onForgetSync}: {
+/** 동기화 암호 넣기. 처음이면 확인 칸까지 */
+export function PassphraseForm({fresh, note, onSubmit}: {fresh: boolean; note?: string; onSubmit: (pass: string) => Promise<string | null>}) {
+  const [pass, setPass] = useState('');
+  const [again, setAgain] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(note);
+  const short = fresh && pass.length > 0 && pass.length < 8;
+  const mismatch = fresh && again.length > 0 && again !== pass;
+  const ready = fresh ? pass.length >= 8 && again === pass : pass.length > 0;
+  return (
+    <form className="set-pass" onSubmit={async e => {
+      e.preventDefault();
+      if (!ready || busy) return;
+      setBusy(true);
+      setError(await onSubmit(pass) ?? undefined);
+      setBusy(false);
+    }}>
+      <div className="set-row static">
+        <KeyRound size={20} aria-hidden="true" />
+        <span className="grow">{fresh ? '동기화 암호 정하기' : '동기화 암호 넣기'}
+          <span className="hint">{fresh ? '다른 기기에서도 이 암호를 넣어요. 잊으면 드롭박스 사본은 열 수 없어요' : '처음 정한 동기화 암호를 넣어주세요'}</span>
+        </span>
+      </div>
+      <input className="set-input" type="password" autoComplete={fresh ? 'new-password' : 'current-password'} aria-label="동기화 암호"
+        placeholder={fresh ? '8자 이상' : '동기화 암호'} value={pass} onChange={e => setPass(e.target.value)} />
+      {fresh && (
+        <input className="set-input" type="password" autoComplete="new-password" aria-label="동기화 암호 확인"
+          placeholder="한 번 더" value={again} onChange={e => setAgain(e.target.value)} />
+      )}
+      {(error || short || mismatch) && (
+        <p className="set-error" role="alert">{short ? '8자 이상으로 정해주세요' : mismatch ? '두 암호가 달라요' : error}</p>
+      )}
+      <button className="set-submit" type="submit" disabled={!ready || busy}>{busy ? '확인 중' : fresh ? '정하고 동기화' : '확인'}</button>
+    </form>
+  );
+}
+
+export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, notify, folders, tags, onRenameTag, onRemoveTag, onEditFolders, sync, onConnect, onPassphrase, onSyncNow, onDisconnect}: {
   isOpen: boolean;
   onClose: () => void;
   records: () => {items: Item[]; folders: Folder[]};
@@ -54,9 +91,11 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
   onRemoveTag: (tag: string) => void;
   onEditFolders: () => void;
   sync: SyncUi;
-  onPickSync: () => void;
+  onConnect: () => void;
+  /** 동기화 암호를 확인·저장한다. 안 되면 이유를 돌려준다 */
+  onPassphrase: (pass: string) => Promise<string | null>;
   onSyncNow: () => void;
-  onForgetSync: () => void;
+  onDisconnect: () => void;
 }) {
   const [mode, setMode] = useState<'main' | 'tags'>('main');
   const [theme, setTheme] = usePref('theme');
@@ -158,30 +197,35 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
         </button>
       </div>
       <div className="set-group">
-        <p className="set-label">동기화 (iCloud Drive)</p>
-        {!sync.supported ? (
+        <p className="set-label">동기화 (드롭박스)</p>
+        {sync.state === 'unset' ? (
           <div className="set-row static"><Cloud size={20} aria-hidden="true" />
-            <span className="grow">이 브라우저에선 안 돼요<span className="hint">윈도우·맥의 크롬이나 엣지에서 iCloud Drive 폴더를 골라 맞춰요. 아이폰은 앱에서 해주세요</span></span>
+            <span className="grow">동기화 꺼짐<span className="hint">이 배포판엔 드롭박스 설정이 없어요</span></span>
+          </div>
+        ) : sync.state === 'loading' ? (
+          <div className="set-row static"><RefreshCw size={20} aria-hidden="true" className="spin" />
+            <span className="grow">드롭박스 확인 중</span>
           </div>
         ) : sync.state === 'off' ? (
-          <button className="set-row" onClick={onPickSync}>
+          <button className="set-row" onClick={onConnect}>
             <Cloud size={20} aria-hidden="true" />
-            <span className="grow">iCloud Drive 폴더 고르기<span className="hint">아이폰 앱과 같은 hikidashi 폴더를 골라요 (윈도우: iCloud for Windows 의 iCloudDrive\hikidashi)</span></span>
+            <span className="grow">드롭박스로 동기화<span className="hint">{sync.error ?? '내용은 이 기기에서 잠가서 올려요'}</span></span>
             <ChevronRight className="chev" size={18} aria-hidden="true" />
           </button>
+        ) : sync.state === 'key' ? (
+          <PassphraseForm fresh={!!sync.fresh} note={sync.error} onSubmit={onPassphrase} />
         ) : (
-          <>
-            <button className="set-row" onClick={onSyncNow} disabled={sync.state === 'syncing'}>
-              <RefreshCw size={20} aria-hidden="true" className={sync.state === 'syncing' ? 'spin' : undefined} />
-              <span className="grow">{sync.state === 'ask' ? '동기화 다시 연결' : '지금 동기화'}
-                <span className="hint">{sync.state === 'error' ? sync.error : sync.state === 'ask' ? '브라우저를 다시 열면 폴더 권한을 한 번 더 눌러줘야 해요' : sync.last ? `마지막 ${stamp(sync.last)}` : '아직 안 했어요'}</span>
-              </span>
-              <span className="val">{sync.folder}</span>
-            </button>
-            <button className="set-row danger" onClick={onForgetSync}>
-              <span className="grow">연결 끊기</span>
-            </button>
-          </>
+          <button className="set-row" onClick={onSyncNow} disabled={sync.state === 'syncing'}>
+            <RefreshCw size={20} aria-hidden="true" className={sync.state === 'syncing' ? 'spin' : undefined} />
+            <span className="grow">지금 동기화
+              <span className="hint">{sync.state === 'error' ? sync.error : sync.last ? `마지막 ${stamp(sync.last)}` : '아직 안 했어요'}</span>
+            </span>
+          </button>
+        )}
+        {(sync.state === 'key' || sync.state === 'idle' || sync.state === 'syncing' || sync.state === 'error') && (
+          <button className="set-row danger" onClick={onDisconnect}>
+            <span className="grow">연결 끊기</span>
+          </button>
         )}
       </div>
       <div className="set-group">

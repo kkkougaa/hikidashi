@@ -48,10 +48,15 @@ final class LibraryStore {
     /// 최근에 연 항목 (이 기기에만, 최신이 앞)
     private(set) var recentIDs: [String] = UserDefaults.standard.stringArray(forKey: "recentIDs") ?? []
     private(set) var checkingLinks = false
-    /// 동기화 상태 (iCloud Drive 폴더)
+    /// 동기화 상태 (드롭박스 + 동기화 암호)
     private(set) var syncState: SyncState = .off
     private var syncTask: Task<Void, Never>?
+    @ObservationIgnored private var liveTask: Task<Void, Never>?
     private var syncing = false
+    @ObservationIgnored private var syncKey: SyncKey?
+    @ObservationIgnored private var syncedSignature = ""
+    /// 백그라운드 새로 고침이 쓸 지금 저장소
+    static weak var current: LibraryStore?
     private var articles: [String: ReaderArticle] = [:]
 
     private let fileURL: URL
@@ -66,7 +71,10 @@ final class LibraryStore {
         } else {
             library = SharedLibrary.load(url) ?? .seeded()
         }
-        if !sample { restoreSyncState() }
+        if !sample {
+            restoreSyncState()
+            Self.current = self
+        }
         save()
     }
 
@@ -456,142 +464,119 @@ enum ArticleDisk {
     }
 }
 
-// MARK: - 동기화: iCloud Drive 폴더의 hikidashi-sync.json 하나를 기기들이 함께 쓴다
+// MARK: - 동기화: 드롭박스 앱 폴더의 잠근 파일 하나 (웹앱과 같은 규칙, docs/SPEC.md 동기화)
 
 enum SyncState: Equatable {
+    /// 이 빌드엔 드롭박스 앱 키가 없다
+    case unset
     case off
-    case idle(folder: String, last: Date?)
-    case syncing(folder: String)
-    case failed(folder: String, message: String)
+    /// 동기화 암호가 필요하다. fresh 면 드롭박스에 파일이 아직 없어 새로 정한다
+    case needsKey(fresh: Bool, note: String?)
+    case idle(last: Date?)
+    case syncing
+    case failed(message: String)
 
-    var folder: String? {
+    /// 암호까지 넣어 맞출 수 있는 상태
+    var ready: Bool {
         switch self {
-        case .off: nil
-        case .idle(let f, _), .syncing(let f), .failed(let f, _): f
-        }
-    }
-}
-
-enum SyncFile {
-    static let name = "hikidashi-sync.json"
-    /// 동시에 고쳐서 iCloud 가 만든 사본도 함께 합친다 ("hikidashi-sync 2.json" 등)
-    static func matches(_ file: String) -> Bool {
-        let n = file.hasPrefix(".") && file.hasSuffix(".icloud") ? String(file.dropFirst().dropLast(7)) : file
-        return n.hasPrefix("hikidashi-sync") && n.hasSuffix(".json")
-    }
-
-    /// 아직 기기에 안 받은 파일(.이름.icloud)은 받기를 부탁하고 잠깐 기다린다
-    static func downloaded(_ url: URL) async -> URL? {
-        let fm = FileManager.default
-        if fm.fileExists(atPath: url.path) {
-            if let v = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]),
-               v.ubiquitousItemDownloadingStatus == .notDownloaded {
-                try? fm.startDownloadingUbiquitousItem(at: url)
-            } else {
-                return url
-            }
-        } else {
-            try? fm.startDownloadingUbiquitousItem(at: url)
-        }
-        for _ in 0..<30 {
-            try? await Task.sleep(for: .milliseconds(500))
-            if fm.fileExists(atPath: url.path),
-               (try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]))?.ubiquitousItemDownloadingStatus != .notDownloaded {
-                return url
-            }
-        }
-        return nil
-    }
-
-    /// 폴더 안 동기화 파일들을 모두 읽는다 (충돌 사본, 이전 판 포함)
-    static func readAll(in folder: URL) async throws -> (backups: [Backup], extras: [URL]) {
-        let fm = FileManager.default
-        let names = try fm.contentsOfDirectory(atPath: folder.path).filter(matches)
-        var urls: [URL] = []
-        for n in names {
-            let real = n.hasPrefix(".") && n.hasSuffix(".icloud") ? String(n.dropFirst().dropLast(7)) : n
-            let u = folder.appendingPathComponent(real)
-            if !urls.contains(u) { urls.append(u) }
-        }
-        var backups: [Backup] = []
-        var extras: [URL] = []
-        for u in urls {
-            guard let ready = await downloaded(u) else { continue }
-            var data: Data?
-            var err: NSError?
-            NSFileCoordinator().coordinate(readingItemAt: ready, options: [], error: &err) { data = try? Data(contentsOf: $0) }
-            if let data, let b = try? parseBackup(data) { backups.append(b) }
-            // 같은 파일의 충돌 판들도 합친다
-            for v in NSFileVersion.unresolvedConflictVersionsOfItem(at: ready) ?? [] {
-                if let d = try? Data(contentsOf: v.url), let b = try? parseBackup(d) { backups.append(b) }
-            }
-            if u.lastPathComponent != name { extras.append(u) }
-        }
-        return (backups, extras)
-    }
-
-    static func write(_ data: Data, in folder: URL, removing extras: [URL]) throws {
-        let main = folder.appendingPathComponent(name)
-        var err: NSError?
-        var writeError: Error?
-        NSFileCoordinator().coordinate(writingItemAt: main, options: .forReplacing, error: &err) { u in
-            do { try data.write(to: u, options: .atomic) } catch { writeError = error }
-        }
-        if let e = err ?? writeError { throw e }
-        // 충돌 판은 다 합쳤으니 정리
-        try? NSFileVersion.removeOtherVersionsOfItem(at: main)
-        for v in NSFileVersion.unresolvedConflictVersionsOfItem(at: main) ?? [] { v.isResolved = true }
-        for x in extras {
-            NSFileCoordinator().coordinate(writingItemAt: x, options: .forDeleting, error: nil) { try? FileManager.default.removeItem(at: $0) }
+        case .idle, .syncing, .failed: true
+        default: false
         }
     }
 }
 
 extension LibraryStore {
-    private static let bookmarkKey = "syncFolderBookmark"
+    private static let revKey = "syncRev"
+    private static let lastKey = "lastSyncAt"
 
-    /// 저장된 폴더 (권한 포함)
-    private func syncFolderURL() -> URL? {
-        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkKey) else { return nil }
-        var stale = false
-        guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
-        if stale, url.startAccessingSecurityScopedResource() {
-            defer { url.stopAccessingSecurityScopedResource() }
-            if let fresh = try? url.bookmarkData() { UserDefaults.standard.set(fresh, forKey: Self.bookmarkKey) }
-        }
-        return url
+    /// 데이터가 바뀌었는지 가볍게 보는 표시 (웹과 같은 방식)
+    private var signature: String {
+        let maxF = library.folders.map(\.updatedAt).max() ?? 0
+        let maxI = library.items.map(\.updatedAt).max() ?? 0
+        return "\(library.items.count):\(library.folders.count):\(max(maxF, maxI))"
     }
 
-    /// 앱을 켤 때 상태만 채운다
+    /// 앱을 켤 때 상태를 채운다
     func restoreSyncState() {
-        guard let url = syncFolderURL() else { syncState = .off; return }
-        let last = UserDefaults.standard.object(forKey: "lastSyncAt") as? Date
-        syncState = .idle(folder: url.lastPathComponent, last: last)
+        // 예전 iCloud Drive 폴더 방식의 흔적은 지운다
+        UserDefaults.standard.removeObject(forKey: "syncFolderBookmark")
+        let box = Dropbox.shared
+        guard box.configured else { syncState = .unset; return }
+        guard box.isConnected else { syncState = .off; return }
+        if let d = SyncKeychain.read(.vaultKey), let key = try? JSONDecoder().decode(SyncKey.self, from: d) {
+            syncKey = key
+            syncState = .idle(last: UserDefaults.standard.object(forKey: Self.lastKey) as? Date)
+        } else {
+            syncState = .needsKey(fresh: false, note: nil)
+            Task { await refreshFresh() }
+        }
     }
 
-    /// 설정에서 폴더를 골랐을 때
-    func connectSync(folder url: URL) {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    /// 암호를 정해야 하는지(드롭박스에 파일이 없는지) 확인
+    private func refreshFresh() async {
+        guard case .needsKey(_, let note) = syncState else { return }
         do {
-            let data = try url.bookmarkData()
-            UserDefaults.standard.set(data, forKey: Self.bookmarkKey)
-            syncState = .idle(folder: url.lastPathComponent, last: nil)
-            Task { await syncNow() }
+            let rev = try await Dropbox.shared.rev()
+            syncState = .needsKey(fresh: rev == nil, note: note)
+        } catch {}
+    }
+
+    /// 설정에서 "드롭박스로 동기화"
+    func connectDropbox() async {
+        do {
+            try await Dropbox.shared.login()
+            syncState = .needsKey(fresh: false, note: nil)
+            await refreshFresh()
+        } catch Dropbox.Failure.cancelled {
         } catch {
-            show("이 폴더는 쓸 수 없어요: \(error.localizedDescription)", error: true)
+            show(error.localizedDescription, error: true)
+        }
+    }
+
+    /// 동기화 암호를 받았을 때. 파일이 있으면 그 암호로 열리는지 확인하고, 없으면 새로 정한다. 안 되면 이유를 돌려준다
+    func submitPassphrase(_ pass: String) async -> String? {
+        do {
+            let got = try await Dropbox.shared.read()
+            let env = try got.map { try SyncEnvelope.decode($0.data) }
+            let kdf = env?.kdf ?? SyncVault.newKdf()
+            let key = try await Task.detached(priority: .userInitiated) { try SyncVault.deriveKey(passphrase: pass, kdf: kdf) }.value
+            if let env { _ = try SyncVault.open(env, with: key) }
+            clearSyncProgress()
+            SyncKeychain.write(.vaultKey, try JSONEncoder().encode(key))
+            syncKey = key
+            syncState = .idle(last: nil)
+            await syncNow(quiet: false)
+            startLiveSync()
+            return nil
+        } catch SyncVaultError.wrongPassphrase {
+            return "암호가 맞지 않아요"
+        } catch Dropbox.Failure.notConnected {
+            syncState = .off
+            return Dropbox.Failure.notConnected.localizedDescription
+        } catch {
+            return error.localizedDescription
         }
     }
 
     func disconnectSync() {
-        UserDefaults.standard.removeObject(forKey: Self.bookmarkKey)
-        UserDefaults.standard.removeObject(forKey: "lastSyncAt")
+        stopLiveSync()
+        syncTask?.cancel()
+        Task { await Dropbox.shared.disconnect() }
+        clearSyncProgress()
+        SyncKeychain.delete(.vaultKey)
+        syncKey = nil
+        UserDefaults.standard.removeObject(forKey: Self.lastKey)
         syncState = .off
+    }
+
+    private func clearSyncProgress() {
+        UserDefaults.standard.removeObject(forKey: Self.revKey)
+        syncedSignature = ""
     }
 
     /// 고친 뒤 잠깐 기다렸다가 (여러 번 고쳐도 한 번만)
     func scheduleSync() {
-        guard syncState != .off, !syncing else { return }
+        guard syncState.ready, !syncing else { return }
         syncTask?.cancel()
         syncTask = Task {
             try? await Task.sleep(for: .seconds(3))
@@ -600,36 +585,98 @@ extension LibraryStore {
         }
     }
 
-    /// 폴더의 파일과 이 기기를 합치고, 합친 걸 다시 파일로 쓴다
+    /// 받기 → 풀기 → 합치기 → 이 기기에 더 새것이 있으면 잠가서 올리기
     func syncNow(quiet: Bool = true) async {
-        guard !syncing, let url = syncFolderURL() else { return }
-        let name = url.lastPathComponent
+        guard !syncing, syncState.ready, let key = syncKey else { return }
         syncing = true
-        syncState = .syncing(folder: name)
+        syncState = .syncing
         defer { syncing = false }
-        guard url.startAccessingSecurityScopedResource() else {
-            syncState = .failed(folder: name, message: "폴더 권한이 사라졌어요. 다시 골라주세요")
-            return
-        }
-        defer { url.stopAccessingSecurityScopedResource() }
+        let d = UserDefaults.standard
         do {
-            let (backups, extras) = try await SyncFile.readAll(in: url)
-            var merged = library
+            let box = Dropbox.shared
             var changed = 0
-            for b in backups { let r = merged.importBackup(b); changed += r.items + r.folders }
-            if changed > 0 {
-                withAnimation(.snappy) { library = merged }
-                save(scheduleSync: false)
+            var newRev: String?
+            let dirty = signature != syncedSignature
+            if let last = d.string(forKey: Self.revKey), !dirty, try await box.rev() == last {
+                newRev = last // 양쪽 다 그대로
+            } else {
+                for round in 0..<3 {
+                    let got = try await box.read()
+                    var theirs: Backup?
+                    if let got {
+                        let plain = try SyncVault.open(try SyncEnvelope.decode(got.data), with: key)
+                        let b = try parseBackup(plain)
+                        var merged = library
+                        let r = merged.importBackup(b)
+                        if r.items + r.folders > 0 {
+                            withAnimation(.snappy) { library = merged }
+                            save(scheduleSync: false)
+                            changed += r.items + r.folders
+                        }
+                        theirs = b
+                    }
+                    if let got, let theirs, !hasNewer(folders: library.folders, items: library.items, than: theirs) {
+                        newRev = got.rev
+                        break
+                    }
+                    let sealed = try SyncVault.seal(try library.backup().encoded(), with: key)
+                    if let rev = try await box.write(sealed, rev: got?.rev) { newRev = rev; break }
+                    if round == 2 { throw Dropbox.Failure.server("다른 기기와 동시에 고치고 있어요. 잠시 뒤에 다시 해주세요") }
+                }
             }
-            let data = try library.backup().encoded()
-            try await Task.detached { try SyncFile.write(data, in: url, removing: extras) }.value
+            d.set(newRev, forKey: Self.revKey)
+            syncedSignature = signature
             let now = Date()
-            UserDefaults.standard.set(now, forKey: "lastSyncAt")
-            syncState = .idle(folder: name, last: now)
+            d.set(now, forKey: Self.lastKey)
+            syncState = .idle(last: now)
             if !quiet || changed > 0 { show(changed > 0 ? "다른 기기에서 \(changed)개를 가져왔어요" : "동기화했어요") }
+        } catch SyncVaultError.wrongPassphrase {
+            stopLiveSync()
+            SyncKeychain.delete(.vaultKey)
+            syncKey = nil
+            clearSyncProgress()
+            syncState = .needsKey(fresh: false, note: "다른 기기에서 동기화 암호를 바꿨어요. 새 암호를 넣어주세요")
+        } catch Dropbox.Failure.notConnected {
+            stopLiveSync()
+            SyncKeychain.delete(.vaultKey)
+            syncKey = nil
+            clearSyncProgress()
+            syncState = .off
+            show(Dropbox.Failure.notConnected.localizedDescription, error: true)
         } catch {
-            syncState = .failed(folder: name, message: error.localizedDescription)
+            syncState = .failed(message: error.localizedDescription)
             if !quiet { show("동기화하지 못했어요", error: true) }
         }
+    }
+
+    // MARK: 열려 있는 동안 바로 받기 (드롭박스 롱폴링)
+
+    func startLiveSync() {
+        guard liveTask == nil, syncState.ready else { return }
+        liveTask = Task { [weak self] in
+            var cursor: String?
+            while !Task.isCancelled {
+                do {
+                    if cursor == nil { cursor = try await Dropbox.shared.latestCursor() }
+                    let r = try await Dropbox.shared.waitForChange(cursor: cursor!)
+                    if Task.isCancelled { break }
+                    if r.changes {
+                        cursor = try await Dropbox.shared.advance(cursor: cursor!)
+                        await self?.syncNow()
+                    }
+                    if let b = r.backoff { try await Task.sleep(for: .seconds(b)) }
+                } catch {
+                    if Task.isCancelled { break }
+                    cursor = nil
+                    try? await Task.sleep(for: .seconds(30))
+                }
+                if self?.syncState.ready != true { break }
+            }
+        }
+    }
+
+    func stopLiveSync() {
+        liveTask?.cancel()
+        liveTask = nil
     }
 }

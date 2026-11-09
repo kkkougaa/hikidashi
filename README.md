@@ -1,6 +1,6 @@
 # hikidashi
 
-링크와 메모를 모아두는 모바일 웹앱(PWA). 引き出し(서랍)에서 따온 이름. 데이터는 기기 안(IndexedDB)에 저장되고, 원하면 iCloud Drive 폴더로 아이폰 앱·다른 컴퓨터와 맞춘다 (서버 없음). 아이폰 앱은 [`ios/`](ios/README.md).
+링크와 메모를 모아두는 모바일 웹앱(PWA). 引き出し(서랍)에서 따온 이름. 데이터는 기기 안(IndexedDB)에 저장되고, 원하면 드롭박스로 아이폰 앱·다른 컴퓨터와 맞춘다 (서버 없음, 기기에서 잠가서 올림). 아이폰 앱은 [`ios/`](ios/README.md).
 
 ## 할 수 있는 것
 
@@ -32,6 +32,7 @@
 - X(트위터) 게시물: [FxTwitter](https://github.com/FixTweet/FxTwitter) 공개 API (`api.fxtwitter.com`). X 는 로그인 없이 글을 읽을 수 없어서 따로 쓴다. 실패하면 Jina Reader 로 다시 시도.
 - 사이트 로고: Google 파비콘 서비스 (`www.google.com/s2/favicons`)
 - 저장한 링크 주소가 이 서비스들로 전달된다.
+- 동기화를 켜면: 드롭박스 API (`api.dropboxapi.com`, `content.dropboxapi.com`, `notify.dropboxapi.com`). 올라가는 건 동기화 암호로 잠근 파일뿐이라 드롭박스는 내용을 볼 수 없다.
 
 ## 사용한 글꼴·이모지
 
@@ -62,17 +63,43 @@ npm run preview    # 빌드 결과 미리 보기
 
 홈 화면에 추가해야 저장 공간이 보호된다. 브라우저 탭으로만 쓰면 오래 안 열었을 때 브라우저가 데이터를 지울 수 있으니, 설정에서 가끔 백업 파일을 만들어 두자.
 
-## 동기화 (iCloud Drive, 서버 없음)
+## 동기화 (드롭박스, 종단간 암호화)
 
-아이폰 앱과 윈도우/맥의 웹앱이 iCloud Drive 의 폴더 하나에 있는 `hikidashi-sync.json` 을 함께 쓴다. 데이터는 형의 iCloud 밖으로 나가지 않고, 돈도 들지 않는다. 규칙은 [`docs/SPEC.md`](docs/SPEC.md#동기화-서버-없음).
+아이폰 앱과 웹앱이 드롭박스 **앱 폴더**(`/앱/<앱 이름>`)의 파일 하나 `hikidashi-sync.enc` 를 함께 쓴다. 파일은 각 기기에서 **동기화 암호**로 잠근 뒤 올리므로 드롭박스(와 드롭박스 계정을 턴 사람)는 내용을 볼 수 없다. 서버도 돈도 필요 없다. 규칙은 [`docs/SPEC.md`](docs/SPEC.md#동기화-드롭박스-종단간-암호화).
 
-1. 아이폰 파일 앱 → iCloud Drive 에 `hikidashi` 폴더를 만든다.
-2. 아이폰 앱 → 서랍 → ⚙︎ → 동기화 → **iCloud Drive 폴더 고르기** → `hikidashi`.
-3. 윈도우: Microsoft Store 에서 **iCloud** (iCloud for Windows) 를 깔고 iCloud Drive 를 켠다. 그러면 `C:\Users\<이름>\iCloudDrive\hikidashi` 가 생긴다.
-4. 크롬이나 엣지로 웹앱 → 서랍 → ⚙︎ → 동기화 → **iCloud Drive 폴더 고르기** → 위 폴더.
-5. 그다음부터는 열 때, 돌아올 때, 고치고 3초 뒤에 저절로 맞춘다. 브라우저를 새로 열면 "동기화 다시 연결"을 한 번 눌러준다 (브라우저 보안 규칙).
+- 한 번 연결하면 계속 로그인돼 있다 (갱신 토큰을 기기에 둔다. 웹은 브라우저 저장소, 아이폰은 키체인).
+- 동기화 암호도 기기마다 처음 한 번만 넣는다 (키를 꺼낼 수 없는 형태로 기기에 둔다).
+- 열려 있는 동안 다른 기기가 올리면 몇 초 안에 들어온다 (드롭박스 변경 알림). 그 밖에 열 때, 돌아올 때, 고치고 3초 뒤. 아이폰은 닫혀 있어도 iOS 가 가끔 깨워 줄 때 맞춘다.
+- 어느 브라우저든 된다 (크롬·엣지·사파리·파이어폭스).
+- **동기화 암호를 잊으면 드롭박스 사본은 아무도 못 연다.** 기기에 있는 데이터는 그대로니, 연결을 끊고 드롭박스 앱 폴더의 파일을 지운 뒤 새 암호로 다시 연결하면 된다.
 
-사파리·파이어폭스·아이폰 웹에서는 폴더 접근이 안 돼서 이 동기화를 못 쓴다 (아이폰은 앱으로).
+### 처음 한 번: 드롭박스 앱 만들기 (5분, 무료)
+
+1. <https://www.dropbox.com/developers/apps> → **Create app**
+   - Choose an API: **Scoped access**
+   - Choose the type of access: **App folder** (이 앱 폴더만 볼 수 있다)
+   - Name: 겹치지 않는 이름 (예: `hikidashi-sync-내아이디`). 드롭박스에 `/앱/<이 이름>` 폴더가 생긴다.
+2. **Permissions** 탭에서 세 개를 켜고 아래 **Submit**
+   - `files.metadata.read`, `files.content.read`, `files.content.write`
+   - (로그인하기 전에 해야 한다. 나중에 바꾸면 기기마다 연결을 끊고 다시 연결)
+3. **Settings** 탭
+   - **OAuth 2 → Redirect URIs** 에 셋을 하나씩 **Add**
+     - `https://kkkougaa.github.io/hikidashi/` (웹앱 주소, 끝의 `/` 까지)
+     - `http://localhost:5173/` (개발용)
+     - `db-<App key>://2/token` (아이폰 앱. `<App key>` 자리에 아래 App key)
+   - **Allow public clients (Implicit Grant & PKCE)** 는 **Allow** 로 둔다 (기본값)
+   - **App key** 를 복사한다. (App secret 은 쓰지 않는다)
+4. GitHub 저장소 → Settings → Secrets and variables → Actions → **Variables** → New repository variable
+   - `DROPBOX_APP_KEY` = 위 App key (비밀값이 아니라서 변수로 둔다. 웹앱에도 그대로 실린다)
+5. `main` 에 푸시하면 웹(Pages)과 아이폰(TestFlight)이 앱 키를 넣어 새로 나간다.
+
+로컬에서 해 보려면 `.env.local` 에 `VITE_DROPBOX_APP_KEY=앱키` 를 넣고 `npm run dev` (5173 포트).
+
+### 쓰는 법
+
+1. 첫 기기: 서랍 → ⚙︎ → 동기화 → **드롭박스로 동기화** → 드롭박스 로그인·허용 → 돌아오면 **동기화 암호 정하기** (8자 이상, 두 번).
+2. 다른 기기: 같은 순서로 연결하고 **같은 동기화 암호**를 넣는다.
+3. 끝. 그다음부터는 저절로 맞춘다. 처음 연결하면 그 기기의 항목과 드롭박스의 항목을 합친다 (같은 항목은 더 나중에 고친 쪽).
 
 ## 구조
 
@@ -84,6 +111,9 @@ src/
   data/db.ts              IndexedDB 읽기·쓰기
   data/library.ts         useLibrary: 추가·수정·삭제·되돌리기
   data/backup.ts          백업 만들기·검사·합치기
+  data/vault.ts           동기화 파일 잠그기·열기 (PBKDF2 + AES-GCM)
+  data/fileSync.ts        동기화 규칙 (받기·풀기·합치기·올리기)
+  data/dropbox.ts         드롭박스 로그인(PKCE)·파일 읽고 쓰기·변경 알림
   lib/format.ts           주소·태그·날짜 처리
   lib/pageInfo.ts         링크 정보 가져오기·정리, 로고 주소
   components/             목록, 카드, 시트들

@@ -361,3 +361,38 @@ final class NewFieldTests: XCTestCase {
         XCTAssertEqual(classifyLink(status: nil, error: .timedOut), .unknown)
     }
 }
+
+final class SyncVaultTests: XCTestCase {
+    func testEnvelopeAndHasNewer() throws {
+        let web = #"{"app":"hikidashi-sync","v":1,"kdf":{"name":"PBKDF2","hash":"SHA-256","iter":1000,"salt":"AAECAwQFBgcICQoLDA0ODw=="},"iv":"oKGio6Slpqeoqaqr","data":"A6Qmg9Yt9FLY7oj19FEHXW1LC3+ZquzRk7lFDnrBtQyXtQ=="}"#
+        let env = try SyncEnvelope.decode(Data(web.utf8))
+        XCTAssertEqual(env.kdf.iter, 1000)
+        XCTAssertThrowsError(try SyncEnvelope.decode(Data(#"{"app":"x"}"#.utf8)))
+
+        let remote = Backup(folders: [], items: [Item(id: "a", kind: .memo, createdAt: 1, updatedAt: 5)])
+        XCTAssertFalse(hasNewer(folders: [], items: [Item(id: "a", kind: .memo, createdAt: 1, updatedAt: 5)], than: remote))
+        XCTAssertTrue(hasNewer(folders: [], items: [Item(id: "a", kind: .memo, createdAt: 1, updatedAt: 6)], than: remote))
+        XCTAssertTrue(hasNewer(folders: [], items: [Item(id: "b", kind: .memo, createdAt: 1, updatedAt: 1)], than: remote))
+    }
+
+    #if canImport(CryptoKit) && canImport(CommonCrypto)
+    /// 웹(src/data/fileSync.test.ts)과 같은 시험 값: 웹이 잠근 걸 앱이 연다
+    func testOpensWebVector() throws {
+        let web = #"{"app":"hikidashi-sync","v":1,"kdf":{"name":"PBKDF2","hash":"SHA-256","iter":1000,"salt":"AAECAwQFBgcICQoLDA0ODw=="},"iv":"oKGio6Slpqeoqaqr","data":"A6Qmg9Yt9FLY7oj19FEHXW1LC3+ZquzRk7lFDnrBtQyXtQ=="}"#
+        let env = try SyncEnvelope.decode(Data(web.utf8))
+        // 조합형(NFD)으로 넣어도 같은 키
+        let key = try SyncVault.deriveKey(passphrase: "서랍 암호 123".decomposedStringWithCanonicalMapping, kdf: env.kdf)
+        XCTAssertEqual(key.key.map { String(format: "%02x", $0) }.joined(), "bd85bc794af41380db5096836e101c3bd5956aeee52731684081d27eea2eb15f")
+        XCTAssertEqual(String(data: try SyncVault.open(env, with: key), encoding: .utf8), #"{"hello":"서랍"}"#)
+        let wrong = try SyncVault.deriveKey(passphrase: "틀림", kdf: env.kdf)
+        XCTAssertThrowsError(try SyncVault.open(env, with: wrong)) { XCTAssertEqual($0 as? SyncVaultError, .wrongPassphrase) }
+    }
+
+    func testSealRoundTrip() throws {
+        let key = try SyncVault.deriveKey(passphrase: "암호", kdf: SyncVault.newKdf(iter: 1000))
+        let sealed = try SyncVault.seal(Data("비밀 메모".utf8), with: key)
+        XCTAssertFalse(String(decoding: sealed, as: UTF8.self).contains("비밀"))
+        XCTAssertEqual(String(data: try SyncVault.open(SyncEnvelope.decode(sealed), with: key), encoding: .utf8), "비밀 메모")
+    }
+    #endif
+}

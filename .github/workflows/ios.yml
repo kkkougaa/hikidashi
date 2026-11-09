@@ -34,6 +34,8 @@ jobs:
           XCODE=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
+      - name: 공통 로직 테스트 (맥, 암호화 포함)
+        run: cd ios/HikidashiCore && swift test
       - name: 프로젝트 만들기
         run: |
           brew install xcodegen

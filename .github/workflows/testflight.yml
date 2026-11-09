@@ -27,6 +27,8 @@ jobs:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+      # 드롭박스 동기화 앱 키 (Variables, 비밀값 아님). 없으면 동기화 꺼진 채로 빌드
+      DROPBOX_APP_KEY: ${{ vars.DROPBOX_APP_KEY }}
     steps:
       - name: 시크릿 확인
         id: check
@@ -116,7 +118,7 @@ jobs:
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic DROPBOX_APP_KEY="$DROPBOX_APP_KEY" \
             CURRENT_PROJECT_VERSION="$BUILD" | tee ../archive.log | grep -E "error:|\*\* ARCHIVE" || true
           grep -q "\*\* ARCHIVE SUCCEEDED \*\*" ../archive.log
           echo "빌드 번호 $BUILD" >> "$GITHUB_STEP_SUMMARY"

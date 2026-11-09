@@ -38,7 +38,7 @@ cd ios && xcodegen generate && open Hikidashi.xcodeproj
 
 ## 동기화
 
-설정 → 동기화에서 iCloud Drive 의 폴더(예: `hikidashi`)를 고르면, 그 폴더의 `hikidashi-sync.json` 으로 웹앱(윈도우 크롬·엣지)과 맞춘다. 서버도 iCloud 권한(entitlement)도 필요 없다. 자세한 건 저장소 맨 위 README.
+설정 → 동기화 → **드롭박스로 동기화** → 로그인 → 동기화 암호. 웹앱과 같은 드롭박스 앱 폴더의 잠근 파일로 맞춘다. 드롭박스 앱 키는 빌드 설정 `DROPBOX_APP_KEY` 로 넣는다 (TestFlight 워크플로는 저장소 변수 `DROPBOX_APP_KEY`). 드롭박스 앱 만들기와 리다이렉트 주소(`db-<앱키>://2/token`)는 저장소 맨 위 README 의 "동기화". 갱신 토큰과 키는 키체인(이 기기 전용)에 둔다.
 
 ## 웹앱과 다른 점
 
