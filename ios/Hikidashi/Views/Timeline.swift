@@ -164,7 +164,7 @@ struct DockBar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            tab("타임라인", "text.bubble", on: viewMode != "grid") { if viewMode == "grid" { withAnimation(.snappy) { viewMode = "list" } } else { onReselect() } }
+            tab("타임라인", "house", on: viewMode != "grid") { if viewMode == "grid" { withAnimation(.snappy) { viewMode = "list" } } else { onReselect() } }
             tab("미디어", "square.grid.2x2", on: viewMode == "grid") { if viewMode != "grid" { withAnimation(.snappy) { viewMode = "grid" } } else { onReselect() } }
             tab("설정", "gearshape", on: false, action: onSettings)
         }
@@ -176,12 +176,10 @@ struct DockBar: View {
 
     private func tab(_ title: String, _ icon: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 2) {
-                Image(systemName: on ? "\(icon).fill" : icon).font(.system(size: 19, weight: .semibold))
-                Text(title).font(.caption2.weight(.semibold))
-            }
+            // 글씨 없이 아이콘만 (읽어 주는 이름은 accessibilityLabel)
+            Image(systemName: on ? "\(icon).fill" : icon).font(.system(size: 21, weight: .semibold))
             .foregroundStyle(on ? Color.brand : .secondary)
-            .frame(minWidth: 70, maxHeight: .infinity)
+            .frame(minWidth: 58, maxHeight: .infinity)
             .padding(.horizontal, 4)
             .background(on ? Color.primary.opacity(0.07) : .clear, in: .capsule)
             .contentShape(.capsule)

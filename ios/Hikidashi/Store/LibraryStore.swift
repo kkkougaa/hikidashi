@@ -161,7 +161,7 @@ final class LibraryStore {
             let files = (try? FileManager.default.contentsOfDirectory(atPath: ArticleDisk.folder.path)) ?? []
             for f in files where f.hasSuffix(".json") {
                 let id = String(f.dropLast(5))
-                if let a = ArticleDisk.load(id) { m[id] = ([a.title ?? ""] + a.blocks.compactMap(\.text)).joined(separator: " ").lowercased() }
+                if let a = ArticleDisk.load(id) { m[id] = ([a.title ?? ""] + a.blocks.compactMap { ReaderArticle.text(of: $0) }).joined(separator: " ").lowercased() }
             }
             articleTexts = m
         }

@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {CheckCheck, CircleCheck, Eye, EyeOff, Folder as FolderIcon, MessageSquareText, StickyNote, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
+import {CheckCheck, CircleCheck, Eye, EyeOff, Folder as FolderIcon, House, StickyNote, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
 import {DropdownMenu} from '@astryxdesign/core/DropdownMenu';
 import {afterSheet, animate, haptic} from './lib/motion';
 import {MobileNav} from '@astryxdesign/core/MobileNav';
@@ -536,9 +536,9 @@ export function App() {
       ) : (
         <div className="fab-dock" data-collapsed={collapsed || undefined}>
           <nav className="dockbar" aria-label="화면" inert={collapsed || undefined}>
-            <button type="button" aria-pressed={view === 'list'} onClick={() => { if (view === 'list') toTop(); else changeView('list'); }}><MessageSquareText size={22} strokeWidth={2} /><span>타임라인</span></button>
-            <button type="button" aria-pressed={view === 'card'} onClick={() => { if (view === 'card') toTop(); else changeView('card'); }}><LayoutGrid size={22} strokeWidth={2} /><span>미디어</span></button>
-            <button type="button" onClick={() => setSheet('settings')}><Settings size={22} strokeWidth={2} /><span>설정</span></button>
+            <button type="button" aria-label="타임라인" aria-pressed={view === 'list'} onClick={() => { if (view === 'list') toTop(); else changeView('list'); }}><House size={24} strokeWidth={2} /></button>
+            <button type="button" aria-label="미디어" aria-pressed={view === 'card'} onClick={() => { if (view === 'card') toTop(); else changeView('card'); }}><LayoutGrid size={24} strokeWidth={2} /></button>
+            <button type="button" aria-label="설정" onClick={() => setSheet('settings')}><Settings size={24} strokeWidth={2} /></button>
           </nav>
           <PullFab onTap={openAdd} onPull={quickAdd} />
         </div>

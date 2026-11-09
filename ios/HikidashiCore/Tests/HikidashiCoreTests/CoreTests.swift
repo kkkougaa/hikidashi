@@ -109,7 +109,9 @@ final class PageInfoTests: XCTestCase {
         {"text":"오늘 찍은 사진\\n두 번째 줄 https://t.co/abc123","author":{"name":"홍길동","screen_name":"hong","avatar_url":"https://pbs.twimg.com/profile_images/1/a_normal.jpg"},"media":{"photos":[{"url":"https://pbs.twimg.com/media/photo.jpg"}]}}
         """
         let info = parseFxTweet(try JSONDecoder().decode(FxTweet.self, from: Data(json.utf8)))
-        XCTAssertEqual(info, PageInfo(title: nil, description: "오늘 찍은 사진\n두 번째 줄", image: "https://pbs.twimg.com/media/photo.jpg", siteName: "X · @hong"))
+        var want = PageInfo(title: nil, description: "오늘 찍은 사진\n두 번째 줄", image: "https://pbs.twimg.com/media/photo.jpg", siteName: "X · @hong")
+        want.avatar = "https://pbs.twimg.com/profile_images/1/a_200x200.jpg"
+        XCTAssertEqual(info, want)
         let noMedia = parseFxTweet(FxTweet(text: "글만", author: .init(name: "A", screen_name: "a", avatar_url: "https://pbs.twimg.com/profile_images/1/a_normal.jpg"), media: nil))
         XCTAssertEqual(noMedia.image, "https://pbs.twimg.com/profile_images/1/a_200x200.jpg")
         XCTAssertNil(noMedia.title)
