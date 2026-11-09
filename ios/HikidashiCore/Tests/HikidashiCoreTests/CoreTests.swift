@@ -475,7 +475,7 @@ final class FolderFamilyTests: XCTestCase {
 
     func testRichTextEnter() {
         XCTAssertEqual(RichText.enterInList("- 사과", at: 4), RichEdit(text: "- 사과\n- ", start: 7, end: 7))
-        XCTAssertEqual(RichText.enterInList("  1. 배", at: 7), RichEdit(text: "  1. 배\n  2. ", start: 13, end: 13))
+        XCTAssertEqual(RichText.enterInList("  1. 배", at: 6), RichEdit(text: "  1. 배\n  2. ", start: 12, end: 12))
         XCTAssertNil(RichText.enterInList("그냥 글", at: 4))
         XCTAssertEqual(RichText.enterInList("- a\n- ", at: 6), RichEdit(text: "- a\n", start: 4, end: 4))
         XCTAssertEqual(RichText.continueList(old: "- 사과", new: "- 사과\n")?.text, "- 사과\n- ")

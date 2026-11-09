@@ -11,7 +11,7 @@ describe('메모 서식', () => {
   });
   it('목록 줄에서 엔터를 치면 기호가 이어진다', () => {
     expect(enterInList('- 사과', 4)).toEqual({text: '- 사과\n- ', start: 7, end: 7});
-    expect(enterInList('  1. 배', 7)).toEqual({text: '  1. 배\n  2. ', start: 13, end: 13});
+    expect(enterInList('  1. 배', 6)).toEqual({text: '  1. 배\n  2. ', start: 12, end: 12});
     expect(enterInList('그냥 글', 4)).toBeNull();
   });
   it('기호만 있는 줄에서 엔터를 치면 목록이 끝난다', () => {
