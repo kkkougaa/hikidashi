@@ -1,5 +1,5 @@
 import type {Backup, Folder, Item} from './types';
-import {COLORS} from './types';
+import {COLORS, isHex} from './types';
 
 export function makeBackup(folders: Folder[], items: Item[], now = Date.now()): Backup {
   return {app: 'hikidashi', version: 1, exportedAt: now, folders, items};
@@ -26,7 +26,7 @@ export function parseBackup(text: string): Backup {
   }
   const folders = b.folders.filter((f): f is Folder => {
     const r = f as unknown as Record<string, unknown>;
-    return !!r && isBase(r) && isStr(r.name) && isStr(r.color) && r.color in COLORS && isNum(r.order);
+    return !!r && isBase(r) && isStr(r.name) && isStr(r.color) && r.color in COLORS && (r.hex == null || isHex(r.hex)) && isNum(r.order);
   });
   const items = b.items.filter((i): i is Item => {
     const r = i as unknown as Record<string, unknown>;

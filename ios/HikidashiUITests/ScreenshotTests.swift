@@ -23,17 +23,23 @@ final class ScreenshotTests: XCTestCase {
         sleep(2) // 이미지 불러오기
         snap("01-list")
 
-        // 그리드(카드) 보기: 하단바
-        let media = app.buttons["그리드"].firstMatch
-        if media.waitForExistence(timeout: 3) {
-            media.tap()
+        // 그리드(카드) 보기: 왼쪽 위 전환 버튼
+        let grid = app.buttons["그리드"].firstMatch
+        if grid.waitForExistence(timeout: 3) {
+            grid.tap()
             sleep(1)
             snap("02-grid")
             app.buttons["리스트"].firstMatch.tap()
             sleep(1)
-            snap("02-rows")
-            app.buttons["홈"].firstMatch.tap()
         }
+        // 하단바: 즐겨찾기 · 메모 칸
+        app.buttons["즐겨찾기"].firstMatch.tap()
+        sleep(1)
+        snap("02-starred")
+        app.buttons["메모"].firstMatch.tap()
+        sleep(1)
+        snap("02-memos")
+        app.buttons["홈"].firstMatch.tap()
 
         // 메모 보기
         app.staticTexts["장보기"].firstMatch.tap()
@@ -61,9 +67,10 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["장보기"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["CSS 그리드 레이아웃"].exists, "다른 서랍 항목은 안 보여야 한다")
 
-        // 설정: 하단바
+        // 설정: 하단바 넷째 칸 (화면을 채우고 하단바는 그대로)
         app.buttons["설정"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["설정 닫기"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["설정"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["홈"].exists, "설정에서도 하단바가 보여야 한다")
         sleep(1)
         snap("06-settings")
         // 정리 칸이 아래에 있어서 조금 올린다
@@ -129,7 +136,7 @@ final class ScreenshotTests: XCTestCase {
 
         app.buttons["서랍 열기"].firstMatch.tap()
         app.buttons["전체"].firstMatch.tap()
-        // 타임라인은 줄이 길어서 아래에 있는 메모는 내려야 보인다
+        // 아래에 있는 메모는 내려야 보일 수 있다
         let memo = app.staticTexts["오사카 메모"].firstMatch
         var tries = 0
         while !(memo.exists && memo.isHittable) && tries < 8 { app.swipeUp(); tries += 1 }

@@ -1,24 +1,44 @@
-/** 서랍 색. 흰 글자가 4.5:1 이상 나오는 진한 색만 쓴다 (17가지, 무지개 순). */
+/** 서랍 색. 흰 굵은 글자가 3:1 이상 나오는 밝은 색만 쓴다 (17가지, 무지개 순). */
 export const COLORS = {
-  red: '#D02B2B',
-  orange: '#B95300',
-  brown: '#8B5A2B',
-  mustard: '#8A6A00',
-  lime: '#4D7C0F',
-  green: '#16804A',
-  forest: '#166534',
-  teal: '#0F766E',
-  cyan: '#007F96',
-  sky: '#0369A1',
-  blue: '#1366E0',
-  navy: '#1E3A8A',
-  purple: '#6B3FD6',
-  plum: '#86198F',
-  magenta: '#C2185B',
-  gray: '#5F646C',
-  charcoal: '#2F343B',
+  red: '#F04D4D',
+  orange: '#E8690A',
+  brown: '#BA7A3E',
+  mustard: '#B38400',
+  lime: '#5C9A16',
+  green: '#1E9E55',
+  forest: '#2F9459',
+  teal: '#14988F',
+  cyan: '#0B97B8',
+  sky: '#2B8FD9',
+  blue: '#3D7FF5',
+  navy: '#5B6AE6',
+  purple: '#9168F7',
+  plum: '#B654CA',
+  magenta: '#E3478A',
+  gray: '#7F858F',
+  charcoal: '#565D68',
 } as const;
 export type ColorKey = keyof typeof COLORS;
+
+const rgbOf = (hex: string) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+/** 팔레트로 직접 고른 색에 가장 가까운 기본 색 (옛 앱은 이 색으로 보인다) */
+export function nearestColor(hex: string): ColorKey {
+  const [r, g, b] = rgbOf(hex);
+  let best: ColorKey = 'blue', d = Infinity;
+  for (const [k, v] of Object.entries(COLORS) as [ColorKey, string][]) {
+    const [x, y, z] = rgbOf(v);
+    const e = (r - x) ** 2 * 2 + (g - y) ** 2 * 4 + (b - z) ** 2 * 3;
+    if (e < d) { d = e; best = k; }
+  }
+  return best;
+}
+/** 이 색 위에 올릴 글자 색: 밝은 색이면 검정 */
+export function inkOn(hex: string): string {
+  const [r, g, b] = rgbOf(hex).map(c => c / 255).map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return 1.05 / (l + 0.05) >= 2.6 ? '#FFFFFF' : '#1B1D21';
+}
+export const isHex = (s: unknown): s is string => typeof s === 'string' && /^#[0-9A-Fa-f]{6}$/.test(s);
 export const COLOR_NAMES: Record<ColorKey, string> = {
   red: '빨강', orange: '주황', brown: '갈색', mustard: '겨자', lime: '연두', green: '초록', forest: '숲초록',
   teal: '청록', cyan: '하늘청록', sky: '하늘', blue: '파랑', navy: '남색', purple: '보라', plum: '자두',
@@ -40,6 +60,8 @@ export interface Folder extends Base {
   name: string;
   /** 하위 서랍은 화면에서 상위 서랍 색을 따른다 (값은 만들 때 상위 색을 넣어 둔다) */
   color: ColorKey;
+  /** 팔레트로 직접 고른 색 "#RRGGBB". 있으면 color 대신 쓴다 (color 는 가장 가까운 기본 색) */
+  hex?: string | null;
   /** 순서. 하위 서랍은 같은 상위 서랍 안에서의 순서 */
   order: number;
   /** 하위 서랍이면 상위 서랍 id (한 단계만). 없거나 null 이면 위 단계 */
@@ -67,6 +89,8 @@ export interface Item extends Base {
   siteName?: string;
   /** 직접 고른 아이콘 이모지 (토스페이스로 그린다). 있으면 이미지·로고보다 먼저 쓴다 */
   emoji?: string;
+  /** 사진에서 잘라 만든 아이콘 (작은 data URL). emoji 다음으로, 글 이미지·로고보다 먼저 쓴다 */
+  icon?: string;
   /** null 이면 미분류 */
   folderId: string | null;
   tags: string[];
@@ -81,7 +105,7 @@ export interface Item extends Base {
   doneAt?: number | null;
 }
 
-export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags' | 'image' | 'video' | 'avatar' | 'images' | 'siteName' | 'emoji'>;
+export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags' | 'image' | 'video' | 'avatar' | 'images' | 'siteName' | 'emoji' | 'icon'>;
 
 export interface Backup {
   app: 'hikidashi';

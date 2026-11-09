@@ -1,13 +1,13 @@
 import {useEffect, useRef, useState, type CSSProperties} from 'react';
-import {BookOpen, CheckCheck, ChevronRight, CircleCheck, Circle, Copy, ExternalLink, EyeOff, Pencil, Star, Trash2, Undo2} from 'lucide-react';
+import {BookOpen, CheckCheck, ChevronRight, CircleCheck, Circle, Copy, ExternalLink, EyeOff, Pencil, Star, Trash2, Undo2, Download, CloudOff, HardDriveDownload} from 'lucide-react';
 import {List, ListItem} from '@astryxdesign/core/List';
 import {ContextMenu} from '@astryxdesign/core/ContextMenu';
 import {Spinner} from '@astryxdesign/core/Spinner';
 import type {Folder, Item} from '../data/types';
 import {BUCKETS, bucketOf, domainOf, stamp} from '../lib/format';
 import {supportsReader} from '../lib/reader';
-import {Block, Meta} from './bits';
-import {logoUrl} from '../lib/pageInfo';
+import {avatarOf, Block, Meta, ProfilePic} from './bits';
+import {plainRich} from '../lib/richText';
 import {isNsfw} from '../data/folders';
 
 export interface ItemActions {
@@ -26,12 +26,17 @@ export interface ItemActions {
   /** 고르는 중이면 고른 id 들 */
   selection: Set<string> | null;
   toggleSelect: (i: Item) => void;
+  /** 오프라인 저장한 항목 id */
+  offline: Set<string>;
+  /** 오프라인 저장 ↔ 지우기 */
+  toggleOffline: (i: Item) => void;
+  openOffline: (i: Item) => void;
 }
 
 /** 항목마다 고유한 전환 이름: 지우거나 넣을 때 다른 줄이 제자리로 미끄러진다 */
 const vtName = (i: Item) => ({viewTransitionName: `it-${i.id.replace(/[^a-zA-Z0-9-]/g, '')}`}) as CSSProperties;
 
-const lines = (t: string) => t.split('\n').map(l => l.trim()).filter(Boolean);
+const lines = (t: string) => plainRich(t).split('\n').map(l => l.trim()).filter(Boolean);
 /** 제목이 없으면 내용 첫 줄을 제목 자리에 쓴다 (X 게시물처럼 제목이 따로 없는 글) */
 export const nameOf = (i: Item) => i.title || lines(i.note)[0] || (i.kind === 'memo' ? '제목 없는 메모' : domainOf(i.url));
 /** 제목 아래 줄: 제목이 내용 첫 줄을 빌려 썼으면 그다음 줄부터 */
@@ -45,6 +50,10 @@ function menuFor(i: Item, act: ItemActions) {
     {label: '편집', icon: <Pencil size={16} />, onClick: () => act.edit(i)},
     {label: i.doneAt ? '완료 취소' : '확인 완료', icon: i.doneAt ? <Undo2 size={16} /> : <CheckCheck size={16} />, onClick: () => act.toggleDone(i)},
     {label: '여러 개 고르기', icon: <CircleCheck size={16} />, onClick: () => act.startSelect(i)},
+    ...(act.offline.has(i.id)
+      ? [{label: '오프라인 보기', icon: <HardDriveDownload size={16} />, onClick: () => act.openOffline(i)},
+         {label: '오프라인 저장 지우기', icon: <CloudOff size={16} />, onClick: () => act.toggleOffline(i)}]
+      : [{label: '오프라인 다운로드', icon: <Download size={16} />, onClick: () => act.toggleOffline(i)}]),
     ...(i.kind === 'link' ? [
       ...(supportsReader(i.url) ? [{label: '리더로 보기', icon: <BookOpen size={16} />, onClick: () => act.openReader(i)}] : []),
       {label: '새 탭으로 열기', icon: <ExternalLink size={16} />, onClick: () => act.openTab(i)},
@@ -60,6 +69,11 @@ function SelectMark({on}: {on: boolean}) {
   return on
     ? <CircleCheck className="select-mark on" size={22} aria-label="선택됨" />
     : <Circle className="select-mark" size={22} aria-label="선택 안 됨" />;
+}
+
+/** 오프라인 저장한 항목: 오른쪽 위 반투명 체크 */
+function OfflineMark() {
+  return <span className="offline-mark" title="오프라인 저장됨"><CircleCheck size={18} strokeWidth={2.4} aria-label="오프라인 저장됨" /></span>;
 }
 
 function Row({item, folder, showFolder, act, loading}: {item: Item; folder?: Folder; showFolder: boolean; act: ItemActions; loading?: boolean}) {
@@ -94,103 +108,9 @@ function Row({item, folder, showFolder, act, loading}: {item: Item; folder?: Fol
   );
   return (
     <div className="vt-row" style={vtName(item)} data-selected={selected || undefined}>
+      {act.offline.has(item.id) && <OfflineMark />}
       {sel ? listItem : <ContextMenu items={menuFor(item, act)} presentation="adaptive" label={nameOf(item)} menuWidth={200}>{listItem}</ContextMenu>}
     </div>
-  );
-}
-
-/** 타임라인 보기의 동그란 사진: 고른 이모지 → SNS 프로필 → 사이트 파비콘 → 메모 아이콘 */
-function Avatar({item: i, folder}: {item: Item; folder?: Folder}) {
-  const [step, setStep] = useState(0);
-  if (i.emoji || i.kind === 'memo') return <span className="tl-avatar"><Block item={i} folder={folder} /></span>;
-  // 예전에 저장한 X 게시물은 프로필 사진이 image 자리에 들어 있기도 하다
-  const sources = [i.avatar, i.image?.includes('profile_images') ? i.image : undefined, logoUrl(i.url, 128)].filter(Boolean) as string[];
-  const src = sources[step];
-  if (!src) return <span className="tl-avatar"><Block item={i} folder={folder} /></span>;
-  const isLogo = src === logoUrl(i.url, 128);
-  return (
-    <span className="tl-avatar" data-logo={isLogo || undefined}>
-      <img src={src} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setStep(s => s + 1)} />
-    </span>
-  );
-}
-
-/** X 처럼: 사진 여러 장은 격자로, 영상은 2초 반복, 아니면 대표 그림 한 장 */
-function Media({item: i}: {item: Item}) {
-  const photos = i.kind === 'link' && !i.emoji ? (i.images?.length ? i.images : []) : [];
-  const cover = coverOf(i);
-  if (i.kind === 'link' && !i.emoji && i.video) return <span className="tl-media" data-n="video"><LoopClip src={i.video} poster={cover ?? ''} /></span>;
-  // 여러 장은 요즘 X 처럼 가로로 넘겨 본다 (높이는 같게, 각자 원래 비율)
-  if (photos.length > 1) {
-    return (
-      <span className="tl-strip" onPointerDown={e => e.stopPropagation()}>
-        {photos.map((u, n) => <img key={u + n} src={u} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />)}
-      </span>
-    );
-  }
-  if (cover) return <span className="tl-media" data-n="1"><img src={cover} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" /></span>;
-  return null;
-}
-
-/** 이름 자리: 제목 (X 게시물처럼 제목이 없으면 @아이디) */
-const tlName = (i: Item) => i.title || (i.siteName?.startsWith('X · ') ? i.siteName.slice(4) : '') || nameOf(i);
-/** 이름 옆 작은 글씨: 사이트 */
-const tlHandle = (i: Item) => (i.kind === 'memo' ? '메모' : i.siteName?.startsWith('X · ') ? 'X' : i.siteName || domainOf(i.url));
-/** 본문: 내용 그대로 (제목이 첫 줄을 빌려 썼으면 그 줄은 빼고) */
-const tlText = (i: Item) => (i.title || (i.siteName?.startsWith('X · ') && !i.title) ? i.note : lines(i.note).slice(1).join('\n')).trim();
-
-function TimelineRow({item: i, folder, showFolder, act, loading}: {item: Item; folder?: Folder; showFolder: boolean; act: ItemActions; loading?: boolean}) {
-  const sel = act.selection;
-  const selected = !!sel?.has(i.id);
-  const text = tlText(i);
-  const row = (
-    <button type="button" className="tl-row" data-selected={selected || undefined} aria-pressed={sel ? selected : undefined}
-      onClick={() => (sel ? act.toggleSelect(i) : act.open(i))}>
-      <span className="tl-left">{sel ? <SelectMark on={selected} /> : <Avatar item={i} folder={folder} />}</span>
-      <span className="tl-main">
-        <span className="tl-head">
-          <span className="tl-name">{tlName(i)}</span>
-          <span className="tl-handle">{tlHandle(i)}</span>
-          <span className="tl-dot" aria-hidden="true">·</span>
-          <span className="tl-time num">{stamp(i.createdAt)}</span>
-          {loading && <Spinner size="sm" aria-label="링크 정보를 가져오는 중" />}
-          {i.starred && <Star className="star" size={14} fill="currentColor" aria-label="즐겨찾기" />}
-        </span>
-        {text && <span className="tl-text">{text}</span>}
-        <Media item={i} />
-        <Meta item={i} folder={folder} showFolder={showFolder} />
-      </span>
-    </button>
-  );
-  return (
-    <div className="vt-row" style={vtName(i)}>
-      {sel ? row : <ContextMenu items={menuFor(i, act)} presentation="adaptive" label={nameOf(i)} menuWidth={200}>{row}</ContextMenu>}
-    </div>
-  );
-}
-
-/** 타임라인 보기 (목록): X 처럼 프로필 사진 · 이름 · 내용 · 사진. 날짜별이나 사이트별로 묶는다 */
-export function TimelineList({items, folderMap, showFolder, act, loadingIds, groupBy}: {items: Item[]; folderMap: Map<string, Folder>; showFolder: boolean; act: ItemActions; loadingIds?: Set<string>; groupBy: 'day' | 'site' | 'none'}) {
-  let groups: {key: string; title: string; list: Item[]}[];
-  if (groupBy === 'site') {
-    const m = new Map<string, Item[]>();
-    for (const i of items) { const k = i.kind === 'memo' ? '' : siteKey(i); m.set(k, [...(m.get(k) ?? []), i]); }
-    groups = [...m.entries()].sort((a, b) => (a[0] === '' ? 1 : b[0] === '' ? -1 : b[1].length - a[1].length || a[0].localeCompare(b[0], 'ko')))
-      .map(([k, list]) => ({key: k || 'memo', title: k || '메모', list}));
-  } else if (groupBy === 'day') {
-    groups = BUCKETS.map(b => ({key: b, title: b, list: items.filter(i => bucketOf(i.createdAt) === b)})).filter(g => g.list.length);
-  } else {
-    groups = [{key: 'all', title: '', list: items}];
-  }
-  return (
-    <>
-      {groups.map((g, n) => (
-        <section className="tl" key={g.key} aria-labelledby={g.title ? `tl-${n}` : undefined}>
-          {g.title && <div className="day-head"><h2 id={`tl-${n}`}>{g.title}</h2><span className="num">{g.list.length}개</span></div>}
-          {g.list.map(i => <TimelineRow key={i.id} item={i} folder={i.folderId ? folderMap.get(i.folderId) : undefined} showFolder={showFolder} act={act} loading={loadingIds?.has(i.id)} />)}
-        </section>
-      ))}
-    </>
   );
 }
 
@@ -318,10 +238,12 @@ function Card({item: i, folder, showFolder, act}: {item: Item; folder?: Folder; 
         )}
         <span className="card-title" data-long={!hasCover || undefined}>{nameOf(i)}</span>
         {sub && <span className="card-desc" data-long={!hasCover || undefined}>{sub}</span>}
-        <Meta item={i} folder={folder} showFolder={showFolder} />
-        <span className="card-src num">{i.kind === 'memo' ? `메모 · ${stamp(i.createdAt)}` : stamp(i.createdAt)}</span>
+        <Meta item={i} folder={folder} showFolder={showFolder} avatar={false} />
+        <span className="card-src num" data-av={avatarOf(i) ? true : undefined}>{i.kind === 'memo' ? `메모 · ${stamp(i.createdAt)}` : stamp(i.createdAt)}</span>
       </span>
+      {!sel && <ProfilePic item={i} className="card-avatar" />}
       {sel && <span className="card-select"><SelectMark on={selected} /></span>}
+      {act.offline.has(i.id) && <OfflineMark />}
     </button>
   );
   return (

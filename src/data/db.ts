@@ -1,6 +1,7 @@
 import {openDB, type DBSchema, type IDBPDatabase} from 'idb';
 import type {Folder, Item} from './types';
 import type {Article} from '../lib/reader';
+import type {OfflinePack} from '../lib/offline';
 
 interface HikidashiDB extends DBSchema {
   items: {key: string; value: Item};
@@ -8,13 +9,15 @@ interface HikidashiDB extends DBSchema {
   meta: {key: string; value: unknown};
   /** 리더 본문 (항목 id → 본문). 동기화하지 않는다 */
   articles: {key: string; value: Article};
+  /** 오프라인 저장 (항목 id → 받은 모습·본문·사진·영상). 동기화하지 않는다 */
+  offline: {key: string; value: OfflinePack};
 }
 
 const DB_NAME = 'hikidashi';
 let dbPromise: Promise<IDBPDatabase<HikidashiDB>> | null = null;
 
 export function db() {
-  dbPromise ??= openDB<HikidashiDB>(DB_NAME, 2, {
+  dbPromise ??= openDB<HikidashiDB>(DB_NAME, 3, {
     upgrade(d, old) {
       if (old < 1) {
         d.createObjectStore('items', {keyPath: 'id'});
@@ -22,6 +25,7 @@ export function db() {
         d.createObjectStore('meta');
       }
       if (old < 2) d.createObjectStore('articles');
+      if (old < 3) d.createObjectStore('offline', {keyPath: 'id'});
     },
   });
   return dbPromise;

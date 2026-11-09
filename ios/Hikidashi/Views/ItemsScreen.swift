@@ -9,7 +9,7 @@ struct ItemsScreen: View {
     @State private var query = ""
     @State private var tagging = false
     @State private var tagText = ""
-    @AppStorage("viewMode") private var viewMode = "list"
+    @AppStorage("viewMode") private var viewMode = "rows"
     @AppStorage("groupBy") private var groupBy = "day"
 
     private var showFolder: Bool {
@@ -35,6 +35,8 @@ struct ItemsScreen: View {
         // 검색창은 평소엔 숨기고, 목록을 아래로 당기면 나온다
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "제목, 메모, 태그, 주소, 본문")
         .onChange(of: query) { _, q in if q.isEmpty { store.forgetArticleTexts() } }
+        // 예전에 저장해서 프로필 사진이 없는 X 글은 보일 때 받아 채운다
+        .task(id: items.map(\.id)) { await store.fillAvatars(items) }
         .toolbar {
             if let sel = store.selection {
                 ToolbarItem(placement: .topBarLeading) {
@@ -50,6 +52,16 @@ struct ItemsScreen: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(action: onMenu) { Image(systemName: "sidebar.left") }
                         .accessibilityLabel("서랍 열기")
+                }
+                if scope != .highlights {
+                    // 리스트 ↔ 그리드: 지금 보기가 아닌 쪽 그림을 보여 주고 누르면 바꾼다
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { withAnimation(.snappy) { viewMode = viewMode == "grid" ? "rows" : "grid" } } label: {
+                            Image(systemName: viewMode == "grid" ? "list.bullet" : "square.grid.2x2")
+                        }
+                        .accessibilityLabel(viewMode == "grid" ? "리스트" : "그리드")
+                        .sensoryFeedback(.selection, trigger: viewMode)
+                    }
                 }
                 // 두 버튼을 한 묶음에 넣으면 iOS 26 의 유리 배경 안에서 세그먼트가 겹쳐 보여서 따로 둔다
                 ToolbarItem(placement: .topBarTrailing) {
@@ -143,14 +155,8 @@ struct ItemsScreen: View {
             ForEach(sections(items), id: \.0) { bucket, group in
                 Section {
                     ForEach(group) { item in
-                        // 홈은 타임라인, 리스트는 한 줄씩
-                        if viewMode == "rows" {
-                            ItemRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id), selected: store.selection.map { $0.contains(item.id) })
-                                .itemActions(item, store: store)
-                        } else {
-                            TimelineRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id), selected: store.selection.map { $0.contains(item.id) })
-                                .itemActions(item, store: store)
-                        }
+                        ItemRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id), selected: store.selection.map { $0.contains(item.id) })
+                            .itemActions(item, store: store, offline: scope == .offline)
                     }
                 } header: {
                     HStack {
@@ -183,7 +189,7 @@ struct ItemsScreen: View {
                     LazyVStack(spacing: 10) {
                         ForEach(cols[c]) { item in
                             ItemCard(item: item, folder: store.folder(item.folderId), showFolder: showFolder, selected: store.selection.map { $0.contains(item.id) })
-                                .itemActions(item, store: store, swipe: false)
+                                .itemActions(item, store: store, swipe: false, offline: scope == .offline)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .top)
@@ -226,7 +232,21 @@ struct ItemRow: View {
             }
         }
         .padding(.vertical, 8)
+        .overlay(alignment: .topTrailing) { if store.offlineIDs.contains(item.id) { OfflineMark().offset(x: 4, y: -2) } }
         .contentShape(.rect)
+    }
+}
+
+/// 오프라인 저장한 항목: 오른쪽 위 반투명 체크
+struct OfflineMark: View {
+    var onImage = false
+    var body: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(onImage ? Color.white : Color.brand)
+            .opacity(onImage ? 0.85 : 0.5)
+            .shadow(color: .black.opacity(onImage ? 0.35 : 0), radius: 2, y: 1)
+            .accessibilityLabel("오프라인 저장됨")
     }
 }
 
@@ -282,6 +302,7 @@ struct ItemCard: View {
                 .padding(.top, 2)
                 Text(item.kind == .memo ? "메모 · \(store.dates.stamp(item.createdAt))" : store.dates.stamp(item.createdAt))
                     .font(.caption2).foregroundStyle(.tertiary).monospacedDigit()
+                    .padding(.trailing, item.profileImage != nil ? 36 : 0)
             }
             .padding(12)
         }
@@ -290,6 +311,15 @@ struct ItemCard: View {
         .clipShape(.rect(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(selected == true ? Color.brand : .primary.opacity(0.07), lineWidth: selected == true ? 2.5 : 1))
         .overlay(alignment: .topLeading) { if let selected { SelectMark(on: selected).padding(8) } }
+        .overlay(alignment: .topTrailing) {
+            if store.offlineIDs.contains(item.id) {
+                // 그림 위 별 배지가 있으면 그 왼쪽에
+                OfflineMark(onImage: item.coverImage != nil || item.coverVideo != nil)
+                    .padding(.top, 10).padding(.trailing, item.starred && (item.coverImage != nil || item.coverVideo != nil) ? 40 : 10)
+            }
+        }
+        // 글쓴이 프로필 사진은 오른쪽 아래 모서리에
+        .overlay(alignment: .bottomTrailing) { if selected == nil { ProfilePic(item: item, size: 30).padding(10) } }
         .scaleEffect(selected == true ? 0.97 : 1)
         .contentShape(.rect(cornerRadius: 18))
     }
@@ -317,8 +347,8 @@ extension Item {
 
 extension View {
     /// 누르기, 밀기, 길게 누르기 메뉴를 한곳에서 붙인다
-    func itemActions(_ item: Item, store: LibraryStore, swipe: Bool = true) -> some View {
-        modifier(ItemActions(item: item, store: store, swipe: swipe))
+    func itemActions(_ item: Item, store: LibraryStore, swipe: Bool = true, offline: Bool = false) -> some View {
+        modifier(ItemActions(item: item, store: store, swipe: swipe, offline: offline))
     }
 }
 
@@ -326,6 +356,8 @@ private struct ItemActions: ViewModifier {
     let item: Item
     let store: LibraryStore
     let swipe: Bool
+    /// 오프라인 보기에서는 누르면 받아 둔 모습으로 연다
+    var offline = false
 
     func body(content: Content) -> some View {
         if store.selection != nil {
@@ -339,7 +371,8 @@ private struct ItemActions: ViewModifier {
     }
 
     @ViewBuilder private func normal(_ content: Content) -> some View {
-        let base = Button { store.open(item) } label: { content }
+        let saved = store.offlineIDs.contains(item.id)
+        let base = Button { if offline && saved { store.offlineView = OfflineRequest(id: item.id) } else { store.open(item) } } label: { content }
             .buttonStyle(.plain)
             .contextMenu {
                 Button { store.toggleStar(item) } label: { Label(item.starred ? "즐겨찾기 해제" : "즐겨찾기", systemImage: item.starred ? "star.slash" : "star") }
@@ -348,6 +381,12 @@ private struct ItemActions: ViewModifier {
                     Label(item.doneAt == nil ? "확인 완료" : "완료 취소", systemImage: item.doneAt == nil ? "checkmark.circle" : "arrow.uturn.backward")
                 }
                 Button { store.startSelecting(item) } label: { Label("여러 개 고르기", systemImage: "checkmark.circle") }
+                if saved {
+                    Button { store.offlineView = OfflineRequest(id: item.id) } label: { Label("오프라인 보기", systemImage: "arrow.down.circle") }
+                    Button { store.removeOffline(item.id) } label: { Label("오프라인 저장 지우기", systemImage: "icloud.slash") }
+                } else {
+                    Button { store.toggleOffline(item) } label: { Label("오프라인 다운로드", systemImage: "arrow.down.to.line") }
+                }
                 if item.kind == .link {
                     if supportsReader(item.url) {
                         Button { store.reader = ReaderRequest(item: item) } label: { Label("리더로 보기", systemImage: "doc.plaintext") }

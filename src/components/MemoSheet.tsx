@@ -2,10 +2,10 @@ import {useEffect, useState} from 'react';
 import {CircleCheck, Pencil, PlusCircle, Star} from 'lucide-react';
 import {BottomSheet} from '@astryxdesign/core/BottomSheet';
 import {MoreMenu} from '@astryxdesign/core/MoreMenu';
-import {COLORS, type Folder, type Item} from '../data/types';
+import {type Folder, type Item} from '../data/types';
 import {domainOf, findUrls, guessTitle, stamp} from '../lib/format';
 import {fetchPageInfo, logoUrl, type PageInfo} from '../lib/pageInfo';
-import {SheetBar, cssVar} from './bits';
+import {RichText, SheetBar, cssVar, folderColor} from './bits';
 
 /** 메모 보기: 화면에서 떠 있는 카드. 오른쪽 위에 [편집 | ⋯], 맨 아래 삭제 */
 export function MemoSheet({item, folder, onClose, onEdit, onRemove, onStar, saved, onOpenLink, onSaveLink}: {
@@ -34,7 +34,7 @@ export function MemoSheet({item, folder, onClose, onEdit, onRemove, onStar, save
             <div className="form-row">
               <span className="form-row-label">서랍</span>
               <span className="form-row-value">
-                <span className="color-bar" style={cssVar(folder ? COLORS[folder.color] : COLORS.gray)} aria-hidden="true" />
+                <span className="color-bar" style={cssVar(folderColor(folder))} aria-hidden="true" />
                 {folder?.name ?? '미분류'}
               </span>
             </div>
@@ -55,7 +55,7 @@ export function MemoSheet({item, folder, onClose, onEdit, onRemove, onStar, save
               </div>
             )}
           </div>
-          {item.note && <p className="memo-full">{item.note}</p>}
+          {item.note && <div className="memo-full"><RichText text={item.note} block /></div>}
           {findUrls(item.note).map(u => (
             <LinkPreview key={u} url={u} saved={saved(u)} onOpen={() => onOpenLink(u)} onSave={info => onSaveLink(u, info, item.folderId)} />
           ))}

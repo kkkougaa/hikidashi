@@ -11,7 +11,7 @@ export function displayFolders(folders: Folder[]): Map<string, Folder> {
   const byId = new Map(folders.map(f => [f.id, f]));
   return new Map(folders.map(f => {
     const p = isChild(f, byId) ? byId.get(f.parentId!)! : null;
-    return [f.id, p ? {...f, name: `${p.name}-${f.name}`, color: p.color} : f];
+    return [f.id, p ? {...f, name: `${p.name}-${f.name}`, color: p.color, hex: p.hex ?? null} : f];
   }));
 }
 

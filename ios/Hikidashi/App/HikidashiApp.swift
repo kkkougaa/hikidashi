@@ -35,8 +35,33 @@ struct RootView: View {
     @State private var scope: Scope = .all
     @State private var drawerOpen = false
     @State private var drag: CGFloat = 0
+    /// 하단바 넷째 칸: 설정이 화면을 채우고 하단바는 그대로
     @State private var settingsOpen = false
-    @AppStorage("viewMode") private var viewMode = "list"
+    @AppStorage("viewMode") private var viewMode = "rows"
+
+    /// 하단바에서 지금 켜진 칸
+    private var dockTab: DockTab? {
+        if settingsOpen { return .settings }
+        switch scope {
+        case .all: return .home
+        case .starred: return .starred
+        case .memos: return .memos
+        default: return nil
+        }
+    }
+
+    private func pickTab(_ t: DockTab) {
+        store.stopSelecting()
+        store.chromeCollapsed = false
+        withAnimation(.snappy) {
+            switch t {
+            case .home: settingsOpen = false; scope = .all
+            case .starred: settingsOpen = false; scope = .starred
+            case .memos: settingsOpen = false; scope = .memos
+            case .settings: settingsOpen = true
+            }
+        }
+    }
 
     var body: some View {
         @Bindable var store = store
@@ -45,13 +70,17 @@ struct RootView: View {
             let progress = drawerProgress(width)
             ZStack(alignment: .leading) {
                 NavigationStack {
-                    ItemsScreen(scope: scope, onMenu: { setDrawer(true) }).id(scope)
+                    if settingsOpen {
+                        SettingsScreen(embedded: true, onMenu: { setDrawer(true) })
+                    } else {
+                        ItemsScreen(scope: scope, onMenu: { setDrawer(true) }).id(scope)
+                    }
                 }
                 .overlay(alignment: .bottom) {
                     if store.selection == nil {
                         // 하단바(왼쪽) + 추가 버튼(오른쪽). 아래로 스크롤하면 하단바가 + 쪽으로 빨려 들어간다
                         ZStack(alignment: .bottomTrailing) {
-                            DockBar(viewMode: $viewMode, collapsed: store.chromeCollapsed, onSettings: { settingsOpen = true })
+                            DockBar(selected: dockTab, onPick: pickTab)
                                 .scaleEffect(x: store.chromeCollapsed ? 0.18 : 1, y: store.chromeCollapsed ? 0.7 : 1, anchor: .trailing)
                                 .blur(radius: store.chromeCollapsed ? 6 : 0)
                                 .opacity(store.chromeCollapsed ? 0 : 1)
@@ -80,11 +109,12 @@ struct RootView: View {
                 DrawerView(selected: scope, onSelect: { s in
                     store.stopSelecting()
                     store.chromeCollapsed = false
+                    settingsOpen = false
                     scope = s
                     setDrawer(false)
                 }, onSettings: {
                     setDrawer(false)
-                    settingsOpen = true
+                    pickTab(.settings)
                 }, onOpen: { it in
                     setDrawer(false)
                     store.open(it)
@@ -131,8 +161,8 @@ struct RootView: View {
         .sheet(isPresented: Binding(get: { store.memoID != nil && store.item(store.memoID) != nil }, set: { if !$0 { store.memoID = nil } })) {
             if let m = store.item(store.memoID) { MemoDetail(item: m) }
         }
-        .sheet(isPresented: $settingsOpen) { SettingsScreen() }
         .sheet(item: $store.reader) { ReaderView(item: $0.item) }
+        .sheet(item: $store.offlineView) { OfflineView(id: $0.id) }
         .fullScreenCover(item: $store.webPage) { SafariView(url: $0.url).ignoresSafeArea() }
         .preferredColorScheme(Appearance(rawValue: appearance)?.scheme)
         .onChange(of: scenePhase) { _, phase in if phase == .active {
@@ -147,6 +177,10 @@ struct RootView: View {
                 store.stopLiveSync()
                 BackgroundSync.schedule()
             } }
+        .onAppear {
+            // 타임라인 보기(list)는 없앴다: 리스트로
+            if viewMode != "grid" { viewMode = "rows" }
+        }
         .onChange(of: store.folders.map(\.id)) { _, ids in
             // 보고 있던 서랍이 지워지면 전체로
             if case .folder(let id) = scope, !ids.contains(id) { scope = .all }

@@ -19,7 +19,7 @@ struct MemoDetail: View {
                     .padding(.bottom, 12)
                     row("서랍") {
                         HStack(spacing: 8) {
-                            RoundedRectangle(cornerRadius: 2).fill(store.folder(item.folderId)?.color.color ?? unfiledColor).frame(width: 5, height: 18)
+                            RoundedRectangle(cornerRadius: 2).fill(store.folder(item.folderId)?.paint ?? unfiledColor).frame(width: 5, height: 18)
                             Text(store.folder(item.folderId)?.name ?? "미분류")
                         }
                     }
@@ -29,7 +29,7 @@ struct MemoDetail: View {
                     }
                     if item.starred { row("즐겨찾기") { Image(systemName: "star.fill").foregroundStyle(Color.star) } }
                     if !item.note.isEmpty {
-                        Text(item.note).font(.body).lineSpacing(4).textSelection(.enabled).padding(.vertical, 16)
+                        RichTextView(text: item.note).padding(.vertical, 16)
                     }
                     // 메모 안의 링크는 미리보기 카드로
                     let links = findURLs(in: item.note)
@@ -102,6 +102,8 @@ struct FolderEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var color: FolderColor = .blue
+    /// 팔레트로 직접 고른 색
+    @State private var hex: String?
     @State private var parentId: String?
     @State private var error: String?
 
@@ -131,15 +133,17 @@ struct FolderEditor: View {
                     Text("색").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 46), spacing: 10)], spacing: 10) {
                         ForEach(FolderColor.allCases, id: \.self) { c in
-                            Button { color = c } label: {
+                            let on = hex == nil && color == c
+                            Button { color = c; hex = nil } label: {
                                 RoundedRectangle(cornerRadius: 12).fill(c.color).aspectRatio(1, contentMode: .fit)
-                                    .overlay { if color == c { Image(systemName: "checkmark").font(.headline.weight(.bold)).foregroundStyle(.white) } }
-                                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(color == c ? c.color : .clear, lineWidth: 2).padding(-4))
+                                    .overlay { if on { Image(systemName: "checkmark").font(.headline.weight(.bold)).foregroundStyle(.white) } }
+                                    .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(on ? c.color : .clear, lineWidth: 2).padding(-4))
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(c.koreanName)
-                            .accessibilityAddTraits(color == c ? .isSelected : [])
+                            .accessibilityAddTraits(on ? .isSelected : [])
                         }
+                        customSwatch
                     }
                     }
                     if let folder {
@@ -166,15 +170,37 @@ struct FolderEditor: View {
         .onAppear {
             name = folder?.name ?? ""
             color = folder?.color ?? .blue
+            hex = folder?.hex
             parentId = folder.flatMap { f in store.library.isChild(f) ? f.parentId : nil }
         }
+    }
+
+    /// 팔레트 칸: 무지개 칸을 누르면 시스템 색 고르기가 열린다. 고른 뒤엔 그 색으로 칠한다
+    private var customSwatch: some View {
+        let picked = hex.map { Color(hex: $0) }
+        return ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(picked.map { AnyShapeStyle($0) } ?? AnyShapeStyle(AngularGradient(colors: [.red, .orange, .yellow, .green, .teal, .blue, .purple, .pink, .red], center: .center)))
+            Image(systemName: hex == nil ? "eyedropper" : "checkmark").font(.headline.weight(.bold))
+                .foregroundStyle(hex.map { whiteReadsOn($0) ? Color.white : Color(white: 0.11) } ?? .white)
+            ColorPicker("팔레트에서 직접 고르기", selection: Binding(get: { picked ?? color.color }, set: { hex = $0.hexString }), supportsOpacity: false)
+                .labelsHidden()
+                .scaleEffect(2.4)
+                .opacity(0.02)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(.rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(picked ?? .clear, lineWidth: 2).padding(-4))
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(hex != nil ? .isSelected : [])
     }
 
     private func save() {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !n.isEmpty else { error = "서랍 이름을 적어주세요"; return }
         guard !store.folders.contains(where: { $0.name == n && $0.id != folder?.id }) else { error = "같은 이름의 서랍이 이미 있어요"; return }
-        if let folder { store.updateFolder(folder.id, name: n, color: color, parentId: parentId) } else { store.addFolder(name: n, color: color, parentId: parentId) }
+        let base = hex.map(FolderColor.nearest(toHex:)) ?? color
+        if let folder { store.updateFolder(folder.id, name: n, color: base, hex: hex, parentId: parentId) } else { store.addFolder(name: n, color: base, hex: hex, parentId: parentId) }
         dismiss()
     }
 }

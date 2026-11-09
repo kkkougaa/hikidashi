@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from 'react';
-import {CheckCheck, CircleCheck, Eye, EyeOff, Folder as FolderIcon, House, Rows3, StickyNote, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
+import {CheckCheck, HardDriveDownload, CircleCheck, Eye, EyeOff, Folder as FolderIcon, House, Rows3, StickyNote, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
 import {DropdownMenu} from '@astryxdesign/core/DropdownMenu';
 import {afterSheet, animate, haptic} from './lib/motion';
 import {MobileNav} from '@astryxdesign/core/MobileNav';
@@ -11,8 +11,8 @@ import {Spinner} from '@astryxdesign/core/Spinner';
 import {Text} from '@astryxdesign/core/Text';
 import {useToast} from '@astryxdesign/core/Toast';
 import {uid, useLibrary} from './data/library';
-import {COLORS, type Folder, type Item, type ItemDraft} from './data/types';
-import {allArticleTexts, getMeta, hasArticle, putArticle, setMeta} from './data/db';
+import {type Folder, type Item, type ItemDraft} from './data/types';
+import {allArticleTexts, getArticle, getMeta, hasArticle, putArticle, setMeta} from './data/db';
 import {displayFolders, familyOf, isNsfw, orderedFolders, withNsfw} from './data/folders';
 import {disconnect, dropboxConfigured, dropboxFile, finishLogin, isConnected, latestCursor, advanceCursor, NotConnected, startLogin, waitForChange} from './data/dropbox';
 import {syncFile} from './data/fileSync';
@@ -20,19 +20,21 @@ import {deriveKey, newKdf, openEnvelope, readEnvelope, WrongPassphrase, type Kdf
 import {domainOf, findUrl, guessTitle, normalizeUrl, parseTags} from './lib/format';
 import {fetchArticle, supportsReader} from './lib/reader';
 import {markRecent, usePref} from './lib/prefs';
-import {Block, cssVar} from './components/bits';
-import {CardGrid, DayList, HighlightList, nameOf, SiteList, TimelineList, type ItemActions} from './components/ItemViews';
+import {Block, cssVar, folderColor} from './components/bits';
+import {CardGrid, DayList, HighlightList, nameOf, SiteList, type ItemActions} from './components/ItemViews';
 import {ItemSheet} from './components/ItemSheet';
 import {MemoSheet} from './components/MemoSheet';
 import {FoldersSheet} from './components/FoldersSheet';
 import {SettingsSheet, type SyncUi} from './components/SettingsSheet';
 import {ReaderSheet} from './components/ReaderSheet';
 import {PullFab} from './components/PullFab';
-import {fetchPageInfo} from './lib/pageInfo';
+import {fetchPageInfo, xStatusId} from './lib/pageInfo';
+import {downloadOffline, offlineIds, removeOffline} from './lib/offline';
+import {OfflineSheet} from './components/OfflineSheet';
 
 /** 보고 있는 범위 */
 type Scope =
-  | {type: 'all'} | {type: 'star'} | {type: 'none'} | {type: 'highlights'} | {type: 'broken'} | {type: 'done'} | {type: 'memos'}
+  | {type: 'all'} | {type: 'star'} | {type: 'none'} | {type: 'highlights'} | {type: 'broken'} | {type: 'done'} | {type: 'memos'} | {type: 'offline'}
   | {type: 'folder'; id: string} | {type: 'tag'; tag: string};
 
 const dotIcon = (color: string) => {
@@ -63,6 +65,10 @@ function readShared(): Partial<ItemDraft> | null {
 const signature = (items: Item[], folders: Folder[]) =>
   `${items.length}:${folders.length}:${Math.max(0, ...items.map(i => i.updatedAt), ...folders.map(f => f.updatedAt))}`;
 
+
+/** 이번 실행에서 프로필 사진을 한 번 찾아본 항목 (실패해도 다시 묻지 않게) */
+const avatarTried = new Set<string>();
+
 export function App() {
   const lib = useLibrary();
   const toast = useToast();
@@ -77,7 +83,13 @@ export function App() {
   const [groupBy] = usePref('groupBy');
   const [dockClear] = usePref('dockClear');
   const [navOpen, setNavOpen] = useState(false);
-  const [sheet, setSheet] = useState<null | 'item' | 'folders' | 'settings'>(null);
+  const [sheet, setSheet] = useState<null | 'item' | 'folders'>(null);
+  // 오프라인 저장한 항목 (기기마다, 동기화 안 함)
+  const [offline, setOffline] = useState<Set<string>>(new Set());
+  const [offlineView, setOfflineView] = useState<string | null>(null);
+  useEffect(() => { void offlineIds().then(setOffline, () => {}); }, []);
+  // 설정은 하단바 넷째 칸: 화면을 채우고 하단바는 그대로 둔다
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [editing, setEditing] = useState<Item | null>(null);
   const [prefill, setPrefill] = useState<Partial<ItemDraft> | undefined>();
   const [memo, setMemo] = useState<Item | null>(null);
@@ -140,6 +152,7 @@ export function App() {
       case 'folder': return !!i.folderId && !!family?.has(i.folderId);
       case 'done': return true;
       case 'memos': return i.kind === 'memo';
+      case 'offline': return offline.has(i.id);
       case 'tag': return i.tags.includes(scope.tag);
     }
   };
@@ -151,7 +164,7 @@ export function App() {
   const matches = (i: Item) => [i.title, i.note, i.url, domainOf(i.url), i.siteName ?? '', i.tags.join(' '), ...(i.highlights ?? [])].join(' ').toLowerCase().includes(query)
     || !!bodies.get(i.id)?.includes(query);
   const list = (scope.type === 'done' ? doneItems : scope.type === 'highlights' ? highlighted : active).filter(i => inScope(i) && (!query || matches(i)));
-  const scopeTitle = {all: '전체', star: '즐겨찾기', none: '미분류', highlights: '하이라이트', broken: '열리지 않는 링크', done: '완료함', memos: '메모'} as Record<string, string>;
+  const scopeTitle = {all: '전체', star: '즐겨찾기', none: '미분류', highlights: '하이라이트', broken: '열리지 않는 링크', done: '완료함', memos: '메모', offline: '오프라인'} as Record<string, string>;
   const title = selection ? (selection.size ? `${selection.size}개 선택` : '항목 고르기')
     : scope.type === 'tag' ? `#${scope.tag}` : scope.type === 'folder' ? folderMap.get(scope.id)?.name ?? '서랍' : scopeTitle[scope.type];
   // 상위 서랍을 볼 땐 어느 하위 서랍 것인지 칩으로 보여준다
@@ -174,8 +187,13 @@ export function App() {
     animate(() => setScope(s));
     toTop(false);
   };
-  const pick = (s: Scope) => { setNavOpen(false); goto(s); };
-  const changeView = (v: 'list' | 'rows' | 'card') => { if (v !== view) animate(() => setView(v)); };
+  const pick = (s: Scope) => { setNavOpen(false); setSettingsOpen(false); goto(s); };
+  /** 하단바 칸: 홈·즐겨찾기·메모. 지금 칸을 다시 누르면 맨 위로 */
+  const tab = (s: Scope) => {
+    if (settingsOpen) { setSelection(null); animate(() => { setSettingsOpen(false); setScope(s); }); toTop(false); return; }
+    goto(s);
+  };
+  const changeView = (v: 'rows' | 'card') => { if (v !== view) animate(() => setView(v)); };
   const openAdd = () => { setEditing(null); setPrefill(undefined); setSheet('item'); };
 
   const defaultFolderId = scope.type === 'folder' ? scope.id
@@ -191,6 +209,28 @@ export function App() {
       if (a) await putArticle(id, a);
     }).catch(() => {});
   };
+
+  // 예전에 저장해서 프로필 사진이 없는 X 글: 화면에 보일 때 글쓴이 프로필을 받아 채운다
+  useEffect(() => {
+    const need = list.filter(i => i.kind === 'link' && !i.avatar && !avatarTried.has(i.id) && xStatusId(i.url ?? '')).slice(0, 12);
+    if (!need.length) return;
+    need.forEach(i => avatarTried.add(i.id));
+    void (async () => {
+      for (const i of need) {
+        const info = await fetchPageInfo(i.url!);
+        const now = lib.allRecords().items.find(x => x.id === i.id);
+        if (!info?.avatar || !now || now.avatar) continue;
+        const patch: Partial<ItemDraft> = {avatar: info.avatar};
+        if (!now.images && info.images) patch.images = info.images;
+        if (!now.video && info.video) patch.video = info.video;
+        if ((!now.siteName || now.siteName === 'X') && info.siteName) patch.siteName = info.siteName;
+        // 예전엔 프로필 사진을 대표 그림 자리에 넣기도 했다
+        if (now.image?.includes('profile_images') && info.image && !info.image.includes('profile_images')) patch.image = info.image;
+        lib.updateItem(i.id, patch);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list.map(i => i.id).join()]);
 
   // 링크 정보를 가져오는 중인 항목 (목록에 작은 회전 표시)
   const [loadingIds, setLoadingIds] = useState<Set<string>>(() => new Set());
@@ -239,6 +279,8 @@ export function App() {
   const act: ItemActions = {
     open: i => {
       markRecent(i.id);
+      // 오프라인 보기에서는 받아 둔 모습으로
+      if (scope.type === 'offline' && offline.has(i.id)) return setOfflineView(i.id);
       if (i.kind === 'memo') setMemo(i);
       else if (linkOpen === 'reader' && supportsReader(i.url)) setReader(i);
       else openTab(i);
@@ -265,6 +307,25 @@ export function App() {
       const doneAt = i.doneAt ? null : Date.now();
       animate(() => lib.updateItem(i.id, {doneAt}));
       undoable(doneAt ? `‘${nameOf(i)}’ 확인 완료` : `‘${nameOf(i)}’ 완료 취소`, () => animate(() => lib.updateItem(i.id, {doneAt: i.doneAt ?? null})));
+    },
+    offline,
+    openOffline: i => setOfflineView(i.id),
+    toggleOffline: i => {
+      if (offline.has(i.id)) {
+        void removeOffline(i.id).then(() => {
+          setOffline(prev => { const n = new Set(prev); n.delete(i.id); return n; });
+          notify('오프라인 저장을 지웠어요');
+        });
+        return;
+      }
+      haptic();
+      setLoading(i.id, true);
+      notify('오프라인으로 받는 중…');
+      void getArticle(i.id).catch(() => undefined).then(saved => downloadOffline(i, saved)).then(p => {
+        setOffline(prev => new Set(prev).add(i.id));
+        const n = Object.keys(p.media).length;
+        notify(p.failed ? `오프라인 저장함 · 그림·영상 ${p.failed}개는 받지 못했어요` : n ? `오프라인 저장함 · 그림·영상 ${n}개` : '오프라인 저장함');
+      }, () => notify('오프라인으로 받지 못했어요', 'error')).finally(() => setLoading(i.id, false));
     },
     toggleNsfw: i => {
       const on = !isNsfw(i);
@@ -375,7 +436,7 @@ export function App() {
           void runSync(back === 'ok');
         } else {
           setSync({state: 'key', fresh: (await dropboxFile.rev()) === null});
-          if (back === 'ok') setSheet('settings');
+          if (back === 'ok') setSettingsOpen(true);
         }
       } catch (e) {
         if (e instanceof NotConnected) setSync({state: 'off'});
@@ -464,12 +525,29 @@ export function App() {
   } else {
     body = view === 'card'
       ? <CardGrid items={list} folderMap={folderMap} showFolder={showFolder} act={act} />
-      : view === 'rows'
-        ? (groupBy === 'site' && scope.type !== 'done'
-          ? <SiteList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} />
-          : <DayList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} />)
-        : <TimelineList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} groupBy={scope.type === 'done' ? 'none' : groupBy} />;
+      : groupBy === 'site' && scope.type !== 'done'
+        ? <SiteList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} />
+        : <DayList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} />;
   }
+
+  const settingsPage = (
+    <SettingsSheet isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} records={lib.allRecords} liveCount={lib.items.length}
+      onImport={lib.importBackup} notify={notify} folders={pickFolders} tags={tags}
+      onRenameTag={(from, to) => { const prev = lib.renameTag(from, to); if (prev.length) undoable(`#${from} → #${to.replace(/^#+/, '').trim()}`, () => lib.restoreVersions(prev)); }}
+      onRemoveTag={t => { const prev = lib.removeTag(t); if (prev.length) undoable(`#${t} 태그를 항목 ${prev.length}개에서 뺐어요`, () => lib.restoreVersions(prev)); }}
+      onEditFolders={() => setSheet('folders')}
+      sync={sync}
+      onConnect={() => void startLogin()}
+      onPassphrase={onPassphrase}
+      onSyncNow={() => void runSync(true)}
+      onDisconnect={async () => {
+        await disconnect();
+        await dropVault();
+        await setMeta('lastSyncAt', undefined);
+        setSync({state: 'off'});
+        notify('드롭박스 연결을 끊었어요');
+      }} />
+  );
 
   const allIds = list.map(i => i.id);
   const allPicked = !!selection && selection.size === allIds.length && allIds.length > 0;
@@ -480,8 +558,14 @@ export function App() {
         {selection
           ? <button className="text-btn" onClick={() => { setSelection(null); setTagging(false); }}>완료</button>
           : <button className="bar-btn" aria-label="서랍 열기" aria-expanded={navOpen} onClick={() => setNavOpen(true)}><Menu strokeWidth={1.8} /></button>}
-        <button type="button" className="topbar-title" onClick={() => toTop()} aria-label={`${title}, 맨 위로`}><h1>{title}</h1>{lib.ready && !selection && <span className="num">{list.length}</span>}</button>
-        {selection
+        {!selection && !settingsOpen && scope.type !== 'highlights' && (
+          <div className="view-switch" role="group" aria-label="보기">
+            <button type="button" aria-label="리스트" aria-pressed={view !== 'card'} onClick={() => changeView('rows')}><Rows3 size={20} strokeWidth={2} /></button>
+            <button type="button" aria-label="그리드" aria-pressed={view === 'card'} onClick={() => changeView('card')}><LayoutGrid size={20} strokeWidth={2} /></button>
+          </div>
+        )}
+        <button type="button" className="topbar-title" onClick={() => toTop()} aria-label={`${settingsOpen ? '설정' : title}, 맨 위로`}><h1>{settingsOpen ? '설정' : title}</h1>{lib.ready && !selection && !settingsOpen && <span className="num">{list.length}</span>}</button>
+        {settingsOpen ? null : selection
           ? <button className="text-btn" onClick={() => setSelection(allPicked ? new Set() : new Set(allIds))}>{allPicked ? '선택 해제' : '모두 선택'}</button>
           : <>
             <button className="bar-btn" aria-label="여러 개 고르기" disabled={!list.length || scope.type === 'highlights'} onClick={() => setSelection(new Set())}><CircleCheck strokeWidth={1.8} /></button>
@@ -501,10 +585,12 @@ export function App() {
         }
       }}>
         <div className="content-inner">
-          <div className="search-bar">
-            <TextInput label="검색" isLabelHidden placeholder="제목, 메모, 태그, 주소, 본문" type="search" value={q} onChange={setQ} startIcon={Search} size="lg" />
-          </div>
-          {body}
+          {settingsOpen ? settingsPage : <>
+            <div className="search-bar">
+              <TextInput label="검색" isLabelHidden placeholder="제목, 메모, 태그, 주소, 본문" type="search" value={q} onChange={setQ} startIcon={Search} size="lg" />
+            </div>
+            {body}
+          </>}
         </div>
       </main>
 
@@ -523,7 +609,7 @@ export function App() {
           )}
           <div className="select-bar" aria-label="고른 항목에 할 일">
             <DropdownMenu placement="above" presentation="adaptive" items={[
-              ...pickFolders.map(f => ({label: f.name, icon: <span className="dot" style={cssVar(COLORS[f.color])} />, onClick: () => bulk(`${selection.size}개를 ‘${f.name}’ 로 옮겼어요`, () => ({folderId: f.id}))})),
+              ...pickFolders.map(f => ({label: f.name, icon: <span className="dot" style={cssVar(folderColor(f))} />, onClick: () => bulk(`${selection.size}개를 ‘${f.name}’ 로 옮겼어요`, () => ({folderId: f.id}))})),
               {label: '미분류', onClick: () => bulk(`${selection.size}개를 미분류로 옮겼어요`, () => ({folderId: null}))},
             ]} renderTrigger={props => <button type="button" disabled={!selection.size} {...props}><FolderIcon size={19} /><span>옮기기</span></button>} />
             <button type="button" disabled={!selection.size} onClick={() => setTagging(t => !t)}><Tag size={19} /><span>태그</span></button>
@@ -541,10 +627,10 @@ export function App() {
       ) : (
         <div className="fab-dock" data-collapsed={collapsed || undefined} style={{['--dock-solid']: `${Math.round((1 - dockClear) * 100)}%`} as CSSProperties}>
           <nav className="dockbar" aria-label="화면" inert={collapsed || undefined}>
-            <button type="button" aria-label="홈" aria-pressed={view === 'list'} onClick={() => { if (view === 'list') toTop(); else changeView('list'); }}><House size={24} strokeWidth={2} /></button>
-            <button type="button" aria-label="리스트" aria-pressed={view === 'rows'} onClick={() => { if (view === 'rows') toTop(); else changeView('rows'); }}><Rows3 size={24} strokeWidth={2} /></button>
-            <button type="button" aria-label="그리드" aria-pressed={view === 'card'} onClick={() => { if (view === 'card') toTop(); else changeView('card'); }}><LayoutGrid size={24} strokeWidth={2} /></button>
-            <button type="button" aria-label="설정" onClick={() => setSheet('settings')}><Settings size={24} strokeWidth={2} /></button>
+            <button type="button" aria-label="홈" aria-pressed={!settingsOpen && scope.type === 'all'} onClick={() => tab({type: 'all'})}><House size={24} strokeWidth={2} /></button>
+            <button type="button" aria-label="즐겨찾기" aria-pressed={!settingsOpen && scope.type === 'star'} onClick={() => tab({type: 'star'})}><Star size={24} strokeWidth={2} /></button>
+            <button type="button" aria-label="메모" aria-pressed={!settingsOpen && scope.type === 'memos'} onClick={() => tab({type: 'memos'})}><StickyNote size={24} strokeWidth={2} /></button>
+            <button type="button" aria-label="설정" aria-pressed={settingsOpen} onClick={() => { if (settingsOpen) toTop(); else { setSelection(null); animate(() => setSettingsOpen(true)); toTop(false); } }}><Settings size={24} strokeWidth={2} /></button>
           </nav>
           <PullFab onTap={openAdd} onPull={quickAdd} />
         </div>
@@ -566,6 +652,7 @@ export function App() {
           {unfiled > 0 && <SideNavItem label="미분류" icon={Tray} isSelected={scope.type === 'none'} onClick={() => pick({type: 'none'})} endContent={count(unfiled)} />}
           {highlighted.length > 0 && <SideNavItem label="하이라이트" icon={Highlighter} isSelected={scope.type === 'highlights'} onClick={() => pick({type: 'highlights'})} endContent={count(highlighted.length)} />}
           {broken.length > 0 && <SideNavItem label="열리지 않는 링크" icon={Link2Off} isSelected={scope.type === 'broken'} onClick={() => pick({type: 'broken'})} endContent={count(broken.length)} />}
+          {offline.size > 0 && <SideNavItem label="오프라인" icon={HardDriveDownload} isSelected={scope.type === 'offline'} onClick={() => pick({type: 'offline'})} endContent={count(active.filter(i => offline.has(i.id)).length)} />}
           {doneItems.length > 0 && <SideNavItem label="완료함" icon={CheckCheck} isSelected={scope.type === 'done'} onClick={() => pick({type: 'done'})} endContent={count(doneItems.length)} />}
         </SideNavSection>
         {recentItems.length > 0 && (
@@ -578,7 +665,7 @@ export function App() {
         )}
         <SideNavSection title="서랍">
           {orderedFolders(lib.folders).map(({folder: f, depth}) => (
-            <SideNavItem key={f.id} label={f.name} icon={depth ? subDotIcon(COLORS[folderMap.get(f.id)!.color]) : dotIcon(COLORS[f.color])}
+            <SideNavItem key={f.id} label={f.name} icon={depth ? subDotIcon(folderColor(folderMap.get(f.id))) : dotIcon(folderColor(f))}
               className={depth ? 'nav-sub' : undefined} isSelected={scope.type === 'folder' && scope.id === f.id}
               onClick={() => pick({type: 'folder', id: f.id})} endContent={count(counts.get(f.id) ?? 0)} />
           ))}
@@ -608,27 +695,18 @@ export function App() {
           prefetch(id, u);
           notify('링크를 저장했어요');
         }} />
+      <OfflineSheet id={offlineView} onClose={() => setOfflineView(null)} onRemove={id => {
+        void removeOffline(id).then(() => {
+          setOffline(prev => { const n = new Set(prev); n.delete(id); return n; });
+          setOfflineView(null);
+          notify('오프라인 저장을 지웠어요');
+        });
+      }} />
       <ReaderSheet item={readerLive} onClose={() => setReader(null)} notify={notify}
         onHighlight={(i, text) => lib.toggleHighlight(i.id, text)} />
       <FoldersSheet isOpen={sheet === 'folders'} onClose={() => setSheet(null)} folders={lib.folders} counts={counts}
-        onAdd={(n, c, parentId) => { lib.addFolder(n, c, parentId); notify(`‘${n}’ 서랍을 만들었어요`); }}
+        onAdd={(n, c, parentId, hex) => { lib.addFolder(n, c, parentId, hex); notify(`‘${n}’ 서랍을 만들었어요`); }}
         onUpdate={(id, p) => lib.updateFolder(id, p)} onRemove={removeFolder} onReorder={lib.reorderFolders} />
-      <SettingsSheet isOpen={sheet === 'settings'} onClose={() => setSheet(null)} records={lib.allRecords} liveCount={lib.items.length}
-        onImport={lib.importBackup} notify={notify} folders={pickFolders} tags={tags}
-        onRenameTag={(from, to) => { const prev = lib.renameTag(from, to); if (prev.length) undoable(`#${from} → #${to.replace(/^#+/, '').trim()}`, () => lib.restoreVersions(prev)); }}
-        onRemoveTag={t => { const prev = lib.removeTag(t); if (prev.length) undoable(`#${t} 태그를 항목 ${prev.length}개에서 뺐어요`, () => lib.restoreVersions(prev)); }}
-        onEditFolders={() => { setSheet(null); afterSheet(() => setSheet('folders')); }}
-        sync={sync}
-        onConnect={() => void startLogin()}
-        onPassphrase={onPassphrase}
-        onSyncNow={() => void runSync(true)}
-        onDisconnect={async () => {
-          await disconnect();
-          await dropVault();
-          await setMeta('lastSyncAt', undefined);
-          setSync({state: 'off'});
-          notify('드롭박스 연결을 끊었어요');
-        }} />
     </div>
   );
 }

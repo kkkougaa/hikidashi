@@ -35,8 +35,8 @@ export interface Library {
   removeItem: (id: string) => void;
   restoreItem: (id: string) => void;
   /** parentId 를 주면 그 서랍의 하위 서랍 (색은 상위 서랍 것) */
-  addFolder: (name: string, color: ColorKey, parentId?: string | null) => Folder;
-  updateFolder: (id: string, patch: Partial<Pick<Folder, 'name' | 'color' | 'order' | 'parentId'>>) => void;
+  addFolder: (name: string, color: ColorKey, parentId?: string | null, hex?: string | null) => Folder;
+  updateFolder: (id: string, patch: Partial<Pick<Folder, 'name' | 'color' | 'hex' | 'order' | 'parentId'>>) => void;
   /** 서랍(과 하위 서랍)을 지우고 안의 항목은 미분류로 옮긴다. 되돌리기용 함수를 돌려준다 */
   removeFolder: (id: string) => () => void;
   importBackup: (b: Backup) => {items: number; folders: number};
@@ -117,12 +117,14 @@ export function useLibrary(): Library {
       const cur = find(id);
       if (cur) writeItems([{...cur, deletedAt: null, updatedAt: Date.now()}]);
     },
-    addFolder: (name, color, parentId = null) => {
+    addFolder: (name, color, parentId = null, hex = null) => {
       const live = foldersRef.current.filter(f => !f.deletedAt);
       const parent = parentId ? live.find(f => f.id === parentId) : undefined;
       const siblings = live.filter(f => (f.parentId ?? null) === (parent?.id ?? null));
       const f = newFolder(name, parent?.color ?? color, siblings.length ? Math.max(...siblings.map(x => x.order)) + 1 : 0);
       if (parent) f.parentId = parent.id;
+      const h = parent ? parent.hex : hex;
+      if (h) f.hex = h;
       writeFolders([f]);
       return f;
     },

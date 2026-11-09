@@ -69,6 +69,7 @@ public struct Library: Codable, Equatable, Sendable {
         it.video = d.video
         it.avatar = d.avatar
         it.images = d.images
+        it.icon = d.icon
         items.append(it)
         return it
     }
@@ -82,7 +83,7 @@ public struct Library: Codable, Equatable, Sendable {
     public mutating func apply(_ d: ItemDraft, to id: String, now: Millis = .now) {
         update(id, now: now) {
             $0.kind = d.kind; $0.url = d.url; $0.title = d.title; $0.note = d.note
-            $0.image = d.image; $0.video = d.video; $0.avatar = d.avatar; $0.images = d.images; $0.siteName = d.siteName; $0.emoji = d.emoji; $0.folderId = d.folderId; $0.tags = d.tags
+            $0.image = d.image; $0.video = d.video; $0.avatar = d.avatar; $0.images = d.images; $0.siteName = d.siteName; $0.emoji = d.emoji; $0.icon = d.icon; $0.folderId = d.folderId; $0.tags = d.tags
         }
     }
 
@@ -118,25 +119,27 @@ public struct Library: Codable, Equatable, Sendable {
 
     /// parentId 를 주면 그 서랍의 하위 서랍 (색은 상위 서랍 것)
     @discardableResult
-    public mutating func addFolder(name: String, color: FolderColor, parentId: String? = nil, now: Millis = .now) -> Folder {
+    public mutating func addFolder(name: String, color: FolderColor, hex: String? = nil, parentId: String? = nil, now: Millis = .now) -> Folder {
         let parent = folder(parentId).flatMap { isChild($0) ? nil : $0 }
         let siblings = liveFolders.filter { f in (isChild(f) ? f.parentId : nil) == parent?.id }
         let next = (siblings.map(\.order).max() ?? -1) + 1
         var f = Folder(name: name, color: parent?.color ?? color, order: next, createdAt: now)
         f.parentId = parent?.id
+        f.hex = parent.map { $0.hex } ?? (isHexColor(hex) ? hex : nil)
         folders.append(f)
         return f
     }
 
     /// parentId: nil 이면 그대로, .some(nil) 이면 맨 위로, .some(id) 면 그 서랍 아래로
-    public mutating func updateFolder(_ id: String, name: String, color: FolderColor, parentId: String?? = nil, now: Millis = .now) {
+    public mutating func updateFolder(_ id: String, name: String, color: FolderColor, hex: String? = nil, parentId: String?? = nil, now: Millis = .now) {
         guard let i = folders.firstIndex(where: { $0.id == id }) else { return }
         folders[i].name = name
         folders[i].color = color
+        folders[i].hex = isHexColor(hex) ? hex : nil
         if let p = parentId {
             let parent = folder(p).flatMap { $0.id != id && !isChild($0) ? $0 : nil }
             folders[i].parentId = parent?.id
-            if let parent { folders[i].color = parent.color }
+            if let parent { folders[i].color = parent.color; folders[i].hex = parent.hex }
         }
         folders[i].updatedAt = max(now, folders[i].updatedAt + 1)
     }
@@ -190,6 +193,12 @@ public struct Library: Codable, Equatable, Sendable {
     public func displayColor(_ f: Folder) -> FolderColor {
         guard isChild(f), let p = folder(f.parentId) else { return f.color }
         return p.color
+    }
+
+    /// 화면에 칠할 색 "#RRGGBB": 팔레트로 고른 색 우선, 하위 서랍은 상위 서랍 것
+    public func displayHex(_ f: Folder) -> String {
+        guard isChild(f), let p = folder(f.parentId) else { return f.paintHex }
+        return p.paintHex
     }
 
     /// 위 단계 서랍 순서대로, 각 서랍 바로 뒤에 하위 서랍

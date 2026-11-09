@@ -4,7 +4,7 @@ import {useEffect, useState} from 'react';
 export interface Prefs {
   theme: 'system' | 'light' | 'dark';
   /** list: 타임라인(홈), rows: 한 줄 목록, card: 그리드 */
-  view: 'list' | 'rows' | 'card';
+  view: 'rows' | 'card';
   /** '' 첫 번째 서랍, 'none' 미분류, 그 밖 서랍 id */
   defaultFolder: string;
   /** 링크를 누르면 리더 / 새 탭 */
@@ -24,7 +24,7 @@ export interface Prefs {
 }
 
 const DEFAULTS: Prefs = {
-  theme: 'system', view: 'list', defaultFolder: '', linkOpen: 'reader', saveArticles: true,
+  theme: 'system', view: 'rows', defaultFolder: '', linkOpen: 'reader', saveArticles: true,
   readerFont: 'sans', readerSize: 18, readerSpacing: 1.75, recent: [], showNsfw: false, groupBy: 'day', dockClear: 0.4,
 };
 
@@ -36,7 +36,10 @@ export function readPrefs(): Prefs {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Prefs>;
     // 예전 보기 설정도 이어받는다
     const oldView = localStorage.getItem('hikidashi-view');
-    return {...DEFAULTS, ...(oldView === 'card' ? {view: 'card' as const} : {}), ...saved};
+    const merged = {...DEFAULTS, ...(oldView === 'card' ? {view: 'card' as const} : {}), ...saved};
+    // 타임라인 보기(list)는 없앴다: 리스트로
+    if ((merged.view as string) === 'list') merged.view = 'rows';
+    return merged;
   } catch {
     return DEFAULTS;
   }

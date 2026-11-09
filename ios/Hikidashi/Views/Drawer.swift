@@ -37,6 +37,8 @@ struct DrawerView: View {
                 let memos = store.items(in: .memos).count
                 if memos > 0 { row(.memos, "메모", icon: "note.text", color: FolderColor.teal.color, count: memos) }
                 row(.starred, "즐겨찾기", icon: "star.fill", color: FolderColor.mustard.color, count: store.activeItems.filter(\.starred).count)
+                let saved = store.items(in: .offline).count
+                if saved > 0 { row(.offline, "오프라인", icon: "arrow.down.circle.fill", color: FolderColor.sky.color, count: saved) }
                 let unfiled = store.items(in: .unfiled).count
                 if unfiled > 0 { row(.unfiled, "미분류", icon: "archivebox.fill", color: unfiledColor, count: unfiled) }
                 let marked = store.items(in: .highlights).count
@@ -73,7 +75,7 @@ struct DrawerView: View {
                 ForEach(store.library.orderedFolders, id: \.folder.id) { entry in
                     let f = entry.folder
                     row(.folder(f.id), f.name, icon: entry.depth > 0 ? "folder" : "folder.fill",
-                        color: store.library.displayColor(f).color, count: store.count(inFolder: f.id), indent: entry.depth > 0)
+                        color: store.library.paint(f), ink: store.library.ink(f), count: store.count(inFolder: f.id), indent: entry.depth > 0)
                         .contextMenu {
                             Button { editing = FolderEdit(folder: f) } label: { Label("편집", systemImage: "pencil") }
                             Button(role: .destructive) {
@@ -110,7 +112,7 @@ struct DrawerView: View {
         .frame(minHeight: 32)
     }
 
-    private func row(_ scope: Scope, _ name: String, icon: String, color: Color?, count: Int, indent: Bool = false) -> some View {
+    private func row(_ scope: Scope, _ name: String, icon: String, color: Color?, ink: Color = .white, count: Int, indent: Bool = false) -> some View {
         let on = selected == scope
         return Button { onSelect(scope) } label: {
             HStack(spacing: 12) {
@@ -120,7 +122,7 @@ struct DrawerView: View {
                         .frame(width: 28, height: 28)
                         .padding(.leading, 18)
                 } else if let color {
-                    Image(systemName: icon).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                    Image(systemName: icon).font(.system(size: 13, weight: .bold)).foregroundStyle(ink)
                         .frame(width: 28, height: 28).background(color, in: .rect(cornerRadius: 8))
                 } else {
                     Image(systemName: icon).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary).frame(width: 28)
@@ -142,10 +144,12 @@ struct DrawerView: View {
 
 /// 설정: 화면, 새 항목, 정리(서랍·태그), 백업, 정보
 struct SettingsScreen: View {
+    /// 하단바 칸으로 화면을 채울 때 (닫기 대신 서랍 버튼)
+    var embedded = false
+    var onMenu: () -> Void = {}
     @Environment(LibraryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @AppStorage("appearance") private var appearance = "system"
-    @AppStorage("viewMode") private var viewMode = "list"
     @AppStorage("groupBy") private var groupBy = "day"
     @AppStorage("dockClear") private var dockClear = 0.4
     @AppStorage("linkOpen") private var linkOpen = "reader"
@@ -162,18 +166,13 @@ struct SettingsScreen: View {
     @State private var importing = false
 
     var body: some View {
-        NavigationStack {
+        OptionalNavigationStack(on: !embedded) {
             Form {
                 Section("화면") {
                     Picker("화면 모드", selection: $appearance) {
                         Text("시스템").tag("system")
                         Text("라이트").tag("light")
                         Text("다크").tag("dark")
-                    }
-                    Picker("기본 보기", selection: $viewMode) {
-                        Text("홈").tag("list")
-                        Text("리스트").tag("rows")
-                        Text("그리드").tag("grid")
                     }
                     Picker("목록 묶음", selection: $groupBy) {
                         Text("날짜").tag("day")
@@ -303,10 +302,19 @@ struct SettingsScreen: View {
             .navigationTitle("설정")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("설정 닫기")
+                if embedded {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: onMenu) { Image(systemName: "sidebar.left") }.accessibilityLabel("서랍 열기")
+                    }
+                } else {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button { dismiss() } label: { Image(systemName: "xmark") }.accessibilityLabel("설정 닫기")
+                    }
                 }
             }
+            // 하단바에 가리지 않게
+            .safeAreaInset(edge: .bottom) { if embedded { Color.clear.frame(height: 76) } }
+            .modifier(CollapseOnScroll())
             .task {
                 backupURL = try? store.writeBackupFile()
                 cacheSize = await Task.detached { ImageCache.diskSize() }.value
@@ -364,8 +372,8 @@ struct FolderManager: View {
                     let f = entry.folder
                     Button { editing = FolderEdit(folder: f) } label: {
                         HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 7).fill(store.library.displayColor(f).color).frame(width: 26, height: 26)
-                                .overlay(Image(systemName: entry.depth > 0 ? "folder" : "folder.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.white))
+                            RoundedRectangle(cornerRadius: 7).fill(store.library.paint(f)).frame(width: 26, height: 26)
+                                .overlay(Image(systemName: entry.depth > 0 ? "folder" : "folder.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(store.library.ink(f)))
                                 .scaleEffect(entry.depth > 0 ? 0.8 : 1)
                             Text(f.name).foregroundStyle(.primary)
                             Spacer()
@@ -429,5 +437,14 @@ struct TagManager: View {
         } message: {
             Text("#\(renaming ?? "") 을(를) 쓰는 모든 항목이 바뀌어요")
         }
+    }
+}
+
+/// on 이면 NavigationStack 으로 감싸고, 아니면 (이미 바깥에 있으면) 그대로
+struct OptionalNavigationStack<Content: View>: View {
+    let on: Bool
+    @ViewBuilder var content: Content
+    var body: some View {
+        if on { NavigationStack { content } } else { content }
     }
 }

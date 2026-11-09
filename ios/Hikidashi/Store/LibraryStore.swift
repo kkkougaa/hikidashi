@@ -43,6 +43,10 @@ final class LibraryStore {
     var memoID: String?
     var webPage: WebPage?
     var reader: ReaderRequest?
+    /// 오프라인 보기로 연 항목
+    var offlineView: OfflineRequest?
+    /// 오프라인 저장한 항목 (이 기기에만)
+    private(set) var offlineIDs: Set<String> = OfflineDisk.ids
     /// 여러 개 고르는 중이면 고른 항목 id (nil 이면 고르는 중 아님)
     var selection: Set<String>?
     /// 최근에 연 항목 (이 기기에만, 최신이 앞)
@@ -144,6 +148,7 @@ final class LibraryStore {
         guard var f = library.folder(id) else { return nil }
         f.name = library.displayName(f)
         f.color = library.displayColor(f)
+        f.hex = library.displayHex(f)
         return f
     }
     /// 고르기 목록용: 상위 다음에 하위 (보여줄 이름·색으로)
@@ -182,6 +187,7 @@ final class LibraryStore {
             switch scope {
             case .all, .done: inScope = true
             case .memos: inScope = i.kind == .memo
+            case .offline: inScope = offlineIDs.contains(i.id)
             case .starred: inScope = i.starred
             case .unfiled: inScope = library.folder(i.folderId) == nil
             case .folder: inScope = i.folderId.map { fam.contains($0) } ?? false
@@ -208,6 +214,7 @@ final class LibraryStore {
         case .broken: "열리지 않는 링크"
         case .done: "완료함"
         case .memos: "메모"
+        case .offline: "오프라인"
         }
     }
 
@@ -234,6 +241,28 @@ final class LibraryStore {
         } else {
             webPage = WebPage(url: url)
         }
+    }
+
+    /// 오프라인 다운로드 ↔ 저장 지우기. 받으면 원본 글이 지워져도 오프라인 보기로 본다 (영상도 같이)
+    func toggleOffline(_ item: Item) {
+        if offlineIDs.contains(item.id) { removeOffline(item.id); return }
+        loadingIDs.insert(item.id)
+        show("오프라인으로 받는 중…")
+        Task {
+            var article = ArticleDisk.load(item.id)
+            if article == nil, item.kind == .link, let url = item.url, supportsReader(url) { article = await fetcher.fetchArticle(url) }
+            let pack = await OfflineDisk.download(item, article: article)
+            loadingIDs.remove(item.id)
+            guard let pack else { return show("오프라인으로 받지 못했어요", error: true) }
+            withAnimation(.snappy) { _ = offlineIDs.insert(item.id) }
+            show(pack.failed > 0 ? "오프라인 저장함 · 그림·영상 \(pack.failed)개는 받지 못했어요" : pack.media.isEmpty ? "오프라인 저장함" : "오프라인 저장함 · 그림·영상 \(pack.media.count)개")
+        }
+    }
+
+    func removeOffline(_ id: String) {
+        OfflineDisk.remove(id)
+        withAnimation(.snappy) { _ = offlineIDs.remove(id) }
+        show("오프라인 저장을 지웠어요")
     }
 
     func openInSafari(_ item: Item) {
@@ -408,8 +437,8 @@ final class LibraryStore {
 
     // MARK: 서랍
 
-    func addFolder(name: String, color: FolderColor, parentId: String? = nil) { change { $0.addFolder(name: name, color: color, parentId: parentId) }; show("‘\(name)’ 서랍을 만들었어요") }
-    func updateFolder(_ id: String, name: String, color: FolderColor, parentId: String?) { change { $0.updateFolder(id, name: name, color: color, parentId: .some(parentId)) } }
+    func addFolder(name: String, color: FolderColor, hex: String? = nil, parentId: String? = nil) { change { $0.addFolder(name: name, color: color, hex: hex, parentId: parentId) }; show("‘\(name)’ 서랍을 만들었어요") }
+    func updateFolder(_ id: String, name: String, color: FolderColor, hex: String? = nil, parentId: String?) { change { $0.updateFolder(id, name: name, color: color, hex: hex, parentId: .some(parentId)) } }
 
     func removeFolder(_ f: Folder) {
         var moved: [String] = []
@@ -442,6 +471,28 @@ final class LibraryStore {
     func fetchInfo(_ url: String) async -> PageInfo? { await fetcher.fetch(url) }
 
     private var previews: [String: PageInfo] = [:]
+    /// 이번 실행에서 프로필 사진을 한 번 찾아본 항목 (실패해도 다시 묻지 않게)
+    private var avatarTried: Set<String> = []
+
+    /// 예전에 저장해서 프로필 사진이 없는 X 글: 보일 때 글쓴이 프로필을 받아 채운다 (한 번에 12개까지)
+    func fillAvatars(_ items: [Item]) async {
+        let need = items.filter { $0.kind == .link && ($0.avatar ?? "").isEmpty && !avatarTried.contains($0.id) && xStatusID($0.url ?? "") != nil }.prefix(12)
+        for it in need { avatarTried.insert(it.id) }
+        for it in need {
+            guard let url = it.url, let info = await fetcher.fetch(url), let avatar = info.avatar else { continue }
+            guard let now = library.item(it.id), (now.avatar ?? "").isEmpty else { continue }
+            change(false) {
+                $0.update(it.id) { x in
+                    x.avatar = avatar
+                    if x.images.isEmpty { x.images = info.images }
+                    if x.video == nil { x.video = info.video }
+                    if x.siteName == nil || x.siteName == "X", let s = info.siteName { x.siteName = s }
+                    // 예전엔 프로필 사진을 대표 그림 자리에 넣기도 했다
+                    if x.image?.contains("profile_images") == true, let img = info.image, !img.contains("profile_images") { x.image = img }
+                }
+            }
+        }
+    }
 
     /// 메모 속 링크 미리보기 (한 번 받은 건 기억)
     func previewInfo(_ url: String) async -> PageInfo? {

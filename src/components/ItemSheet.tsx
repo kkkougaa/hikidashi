@@ -1,14 +1,16 @@
 import {useEffect, useRef, useState} from 'react';
-import {ChevronRight, ClipboardPaste, Link2, RotateCw} from 'lucide-react';
+import {Bold, ChevronRight, ImagePlus, ClipboardPaste, Link2, List, ListOrdered, RotateCw} from 'lucide-react';
 import {BottomSheet} from '@astryxdesign/core/BottomSheet';
 import {SegmentedControl, SegmentedControlItem} from '@astryxdesign/core/SegmentedControl';
 import {Spinner} from '@astryxdesign/core/Spinner';
-import {COLORS, type Folder, type Item, type ItemDraft, type ItemKind} from '../data/types';
+import {type Folder, type Item, type ItemDraft, type ItemKind} from '../data/types';
 import {guessTitle, normalizeUrl} from '../lib/format';
 import {fetchPageInfo} from '../lib/pageInfo';
-import {Block, ConfirmButton, SheetBar, cssVar} from './bits';
+import {enterInList, toggleBold, toggleList, type Edit} from '../lib/richText';
+import {Block, ConfirmButton, SheetBar, cssVar, folderColor} from './bits';
 import {TagInput} from './TagInput';
 import {EmojiPicker} from './EmojiPicker';
+import {IconCropper} from './IconCropper';
 
 export interface ItemSheetProps {
   isOpen: boolean;
@@ -42,7 +44,7 @@ function FolderRow({folders, value, onChange}: {folders: Folder[]; value: string
     <label className="form-row tappable">
       <span className="form-row-label">서랍</span>
       <span className="form-row-value">
-        <span className="color-bar" style={cssVar(f ? COLORS[f.color] : COLORS.gray)} aria-hidden="true" />
+        <span className="color-bar" style={cssVar(folderColor(f))} aria-hidden="true" />
         {f?.name ?? '미분류'}
         <ChevronRight className="chev" size={18} aria-hidden="true" />
       </span>
@@ -68,6 +70,9 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
   const [folderId, setFolderId] = useState<string>((editing ? editing.folderId : (prefill?.folderId ?? defaultFolderId)) ?? NONE);
   const [tags, setTags] = useState<string[]>(init.tags ?? []);
   const [emoji, setEmoji] = useState<string | undefined>(init.emoji);
+  const [icon, setIcon] = useState<string | undefined>(init.icon);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [pickOpen, setPickOpen] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pasteMsg, setPasteMsg] = useState<string | null>(null);
@@ -117,6 +122,17 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
     el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
   }, [note, kind]);
 
+  // 서식 바꾼 뒤에도 커서와 고른 범위를 지킨다
+  const apply = (r: Edit) => {
+    setNote(r.text);
+    touched.current.note = true;
+    requestAnimationFrame(() => { const el = noteRef.current; if (el) { el.focus(); el.setSelectionRange(r.start, r.end); } });
+  };
+  const format = (f: (t: string, s: number, e: number) => Edit) => {
+    const el = noteRef.current;
+    apply(f(note, el?.selectionStart ?? note.length, el?.selectionEnd ?? note.length));
+  };
+
   const paste = async () => {
     try {
       const t = (await navigator.clipboard.readText()).trim();
@@ -147,10 +163,10 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
         return;
       }
       // 내용이 있으면 제목을 지어내지 않고 비워 둔다 (X 게시물 같은 경우)
-      onSave({...base, kind, url: u, title: base.title || (base.note ? '' : guessTitle(u)), image, video, avatar, images, siteName, emoji});
+      onSave({...base, kind, url: u, title: base.title || (base.note ? '' : guessTitle(u)), image, video, avatar, images, siteName, emoji, icon});
     } else {
       if (!base.note && !base.title) return setErr('메모 내용을 적어주세요');
-      onSave({...base, kind, url: undefined, image: undefined, video: undefined, avatar: undefined, images: undefined, siteName: undefined, emoji});
+      onSave({...base, kind, url: undefined, image: undefined, video: undefined, avatar: undefined, images: undefined, siteName: undefined, emoji, icon});
     }
   };
 
@@ -200,8 +216,24 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
       )}
 
       <div className="form-group">
+        {kind === 'memo' && (
+          <div className="fmt-bar" role="toolbar" aria-label="서식">
+            <button type="button" className="fmt-btn" aria-label="굵게" onMouseDown={e => e.preventDefault()} onClick={() => format(toggleBold)}><Bold size={18} strokeWidth={2.4} /></button>
+            <button type="button" className="fmt-btn" aria-label="글머리 기호 목록" onMouseDown={e => e.preventDefault()} onClick={() => format((t, s, e) => toggleList(t, s, e, 'bullet'))}><List size={18} /></button>
+            <button type="button" className="fmt-btn" aria-label="번호 목록" onMouseDown={e => e.preventDefault()} onClick={() => format((t, s, e) => toggleList(t, s, e, 'number'))}><ListOrdered size={18} /></button>
+          </div>
+        )}
         <textarea ref={noteRef} className="note-input" value={note} rows={kind === 'link' ? 2 : 5} aria-label={kind === 'link' ? '내용' : '메모'}
           placeholder={kind === 'link' ? '내용 (페이지 소개문이 자동으로 들어가요)' : '메모'}
+          onKeyDown={e => {
+            if (kind !== 'memo' || e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
+            const el = e.currentTarget;
+            if (el.selectionStart !== el.selectionEnd) return;
+            const r = enterInList(note, el.selectionStart);
+            if (!r) return;
+            e.preventDefault();
+            apply(r);
+          }}
           onChange={e => { setNote(e.target.value); touched.current.note = true; setErr(null); }} />
         {kind === 'memo' && err && <p className="form-hint"><span className="err">{err}</span></p>}
       </div>
@@ -213,6 +245,7 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
           <span className="form-row-value">
             {emoji
               ? <span className="tossface icon-preview">{emoji}</span>
+              : icon ? <span className="block thumb"><img src={icon} alt="" /></span>
               : kind === 'link' && normalized
                 ? <Block item={{kind: 'link', url: normalized, image, title, note, folderId: null, tags: [], starred: false, id: 'icon-preview', createdAt: 0, updatedAt: 0, deletedAt: null}} />
                 : <span>{kind === 'memo' ? '기본' : '자동'}</span>}
@@ -221,7 +254,20 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
         </button>
         <div className="picker-reveal" data-open={pickOpen} inert={!pickOpen}>
           <div>
-            <EmojiPicker value={emoji} onChange={e => setEmoji(e)} autoLabel={kind === 'link' ? '자동 (글 이미지나 사이트 로고)' : '기본 (메모 아이콘)'} />
+            {cropFile
+              ? <IconCropper file={cropFile} onCancel={() => setCropFile(null)} onDone={u => { setIcon(u); setEmoji(undefined); setCropFile(null); }} />
+              : (
+                <>
+                  <div className="icon-photo-row">
+                    <button type="button" className="emoji-auto" aria-pressed={!!icon} onClick={() => fileRef.current?.click()}>
+                      {icon ? <><span className="block thumb mini"><img src={icon} alt="" /></span>사진 바꾸기</> : <><ImagePlus size={18} aria-hidden="true" />사진에서 고르기</>}
+                    </button>
+                    {icon && <button type="button" className="emoji-auto" onClick={() => setIcon(undefined)}>사진 빼기</button>}
+                    <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setCropFile(f); e.target.value = ''; }} />
+                  </div>
+                  <EmojiPicker value={icon ? ' ' : emoji} onChange={e => { setEmoji(e); if (e) setIcon(undefined); }} autoLabel={kind === 'link' ? '자동 (글 이미지나 사이트 로고)' : '기본 (메모 아이콘)'} />
+                </>
+              )}
           </div>
         </div>
         <TagInput value={tags} onChange={setTags} suggestions={allTags} sourceUrl={normalized ?? undefined} siteName={siteName} />

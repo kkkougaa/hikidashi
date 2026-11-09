@@ -3,7 +3,21 @@ import CryptoKit
 import SwiftUI
 import HikidashiCore
 
-/// 항목 아이콘: 고른 이모지 → 글 대표 이미지 → 사이트 로고 → 서랍 색 블록
+/// 사진에서 잘라 만든 아이콘 (data URL) 을 그림으로. 같은 글자면 다시 풀지 않는다
+@MainActor
+enum IconImage {
+    private static let cache = NSCache<NSString, UIImage>()
+    static func image(_ dataURL: String?) -> UIImage? {
+        guard let dataURL, dataURL.hasPrefix("data:image/"), let comma = dataURL.firstIndex(of: ",") else { return nil }
+        let key = dataURL as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        guard let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])), let img = UIImage(data: data) else { return nil }
+        cache.setObject(img, forKey: key)
+        return img
+    }
+}
+
+/// 항목 아이콘: 고른 이모지 → 사진 아이콘 → 글 대표 이미지 → 사이트 로고 → 서랍 색 블록
 struct ItemIcon: View {
     let item: Item
     let folder: Folder?
@@ -21,6 +35,11 @@ struct ItemIcon: View {
                     .font(.system(size: size * 0.58))
                     .frame(width: size, height: size)
                     .background(Color(.secondarySystemFill), in: .rect(cornerRadius: corner))
+            } else if let icon = IconImage.image(item.icon) {
+                Image(uiImage: icon).resizable().scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(.rect(cornerRadius: corner))
+                    .overlay(RoundedRectangle(cornerRadius: corner).strokeBorder(.primary.opacity(0.08)))
             } else if item.kind == .link, let image = item.image, !imageFailed, let url = URL(string: image) {
                 CachedImage(url: url.absoluteString, onFail: { imageFailed = true }) { $0.resizable().scaledToFill() } placeholder: { Color(.secondarySystemFill) }
                 .frame(width: size, height: size)
@@ -34,11 +53,11 @@ struct ItemIcon: View {
             } else {
                 let letter = item.kind == .memo ? nil : String(domain(of: item.url).prefix(1)).uppercased()
                 ZStack {
-                    RoundedRectangle(cornerRadius: corner).fill(folder?.color.color ?? unfiledColor)
+                    RoundedRectangle(cornerRadius: corner).fill(folder?.paint ?? unfiledColor)
                     if let letter, !letter.isEmpty {
-                        Text(letter).font(.system(size: size * 0.4, weight: .bold)).foregroundStyle(.white)
+                        Text(letter).font(.system(size: size * 0.4, weight: .bold)).foregroundStyle(folder?.ink ?? .white)
                     } else {
-                        Image(systemName: "note.text").font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(.white)
+                        Image(systemName: "note.text").font(.system(size: size * 0.42, weight: .semibold)).foregroundStyle(folder?.ink ?? .white)
                     }
                 }
                 .frame(width: size, height: size)
@@ -77,9 +96,9 @@ struct FolderPill: View {
     let folder: Folder?
     var body: some View {
         if let folder {
-            Text(folder.name).font(.caption.weight(.semibold)).foregroundStyle(.white)
+            Text(folder.name).font(.caption.weight(.semibold)).foregroundStyle(folder.ink)
                 .padding(.horizontal, 8).frame(height: 22)
-                .background(folder.color.color, in: .rect(cornerRadius: 6))
+                .background(folder.paint, in: .rect(cornerRadius: 6))
                 .lineLimit(1)
         } else {
             Text("미분류").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -99,7 +118,10 @@ struct MetaRow: View {
         HStack(spacing: 6) {
             if item.brokenAt != nil { BrokenBadge() }
             if showFolder { FolderPill(folder: folder) }
-            if item.kind == .link, let url = item.url { SourceChip(url: url, siteName: item.siteName) }
+            if item.kind == .link, let url = item.url {
+                ProfilePic(item: item, size: 22)
+                SourceChip(url: url, siteName: item.siteName)
+            }
             ForEach(item.tags, id: \.self) { t in
                 Text("#\(t)").font(.footnote).foregroundStyle(.secondary).lineLimit(1).fixedSize()
             }
@@ -341,5 +363,86 @@ private struct PlayerLayerView: UIViewRepresentable {
             backgroundColor = .clear
         }
         required init?(coder: NSCoder) { fatalError("코드로만 만든다") }
+    }
+}
+
+extension Item {
+    /// 글쓴이 프로필 사진 (X 등). 예전에 저장한 X 글은 대표 그림 자리에 들어 있기도 하다
+    var profileImage: String? {
+        guard kind == .link else { return nil }
+        if let a = avatar, !a.isEmpty { return a }
+        return image.flatMap { $0.contains("profile_images") ? $0 : nil }
+    }
+}
+
+/// 동그란 글쓴이 프로필 사진. 없거나 못 불러오면 자리를 차지하지 않는다
+struct ProfilePic: View {
+    let item: Item
+    var size: CGFloat = 22
+    @State private var failed: String?
+
+    var body: some View {
+        if let src = item.profileImage, failed != src {
+            CachedImage(url: src, onFail: { failed = src }) { $0.resizable().scaledToFill() } placeholder: { Color(.tertiarySystemFill) }
+                .frame(width: size, height: size)
+                .clipShape(.circle)
+                .overlay(Circle().strokeBorder(.primary.opacity(0.08)))
+                .background(Circle().fill(Color(.secondarySystemGroupedBackground)).padding(-2))
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// 서식 있는 메모 조각을 글자로 (굵게는 강조)
+func richAttributed(_ spans: [RichSpan]) -> AttributedString {
+    spans.reduce(into: AttributedString()) { out, s in
+        var a = AttributedString(s.text)
+        if s.bold { a.inlinePresentationIntent = .stronglyEmphasized }
+        out += a
+    }
+}
+
+/// 서식 있는 메모를 한 덩어리 글로 (줄 수 자르기용, 타임라인)
+func richInline(_ text: String) -> AttributedString {
+    var out = AttributedString()
+    for (n, l) in RichText.parse(text).enumerated() {
+        if n > 0 { out += AttributedString("\n") }
+        switch l {
+        case .bullet: out += AttributedString("• ")
+        case .number(_, let k, _): out += AttributedString("\(k). ")
+        case .text: break
+        }
+        out += richAttributed(l.spans)
+    }
+    return out
+}
+
+/// 서식 있는 메모 본문: 목록 줄은 기호를 따로 세우고 들여 쓴다
+struct RichTextView: View {
+    let text: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(RichText.parse(text).enumerated()), id: \.offset) { _, l in
+                switch l {
+                case .text(let s):
+                    Text(s.contains { !$0.text.isEmpty } ? richAttributed(s) : " ")
+                case .bullet(let indent, let s):
+                    item("•", s, indent)
+                case .number(let indent, let n, let s):
+                    item("\(n).", s, indent)
+                }
+            }
+        }
+        .font(.body).lineSpacing(4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textSelection(.enabled)
+    }
+
+    private func item(_ mark: String, _ s: [RichSpan], _ indent: Int) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(mark).foregroundStyle(.secondary).monospacedDigit().frame(minWidth: 14, alignment: .leading)
+            Text(richAttributed(s))
+        }
+        .padding(.leading, 4 + CGFloat(indent) * 8)
     }
 }

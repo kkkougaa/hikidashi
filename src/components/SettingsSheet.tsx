@@ -2,13 +2,12 @@ import {useEffect, useRef, useState} from 'react';
 import {ChevronLeft, ChevronRight, Cloud, Download, FolderCog, Hash, KeyRound, RefreshCw, ShieldCheck, Trash2, Upload} from 'lucide-react';
 import {SegmentedControl, SegmentedControlItem} from '@astryxdesign/core/SegmentedControl';
 import {Switch} from '@astryxdesign/core/Switch';
-import {BottomSheet} from '@astryxdesign/core/BottomSheet';
 import {clearArticles, countArticles, getMeta, requestPersistence, setMeta} from '../data/db';
 import {usePref} from '../lib/prefs';
 import {BackupError, makeBackup, parseBackup} from '../data/backup';
 import type {Backup, Folder, Item} from '../data/types';
 import {fileStamp, stamp} from '../lib/format';
-import {SheetBar, SheetHead} from './bits';
+import {SheetBar} from './bits';
 
 const VERSION = '0.1.0';
 
@@ -78,7 +77,7 @@ export function PassphraseForm({fresh, note, onSubmit}: {fresh: boolean; note?: 
   );
 }
 
-export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, notify, folders, tags, onRenameTag, onRemoveTag, onEditFolders, sync, onConnect, onPassphrase, onSyncNow, onDisconnect}: {
+export function SettingsSheet({isOpen, records, liveCount, onImport, notify, folders, tags, onRenameTag, onRemoveTag, onEditFolders, sync, onConnect, onPassphrase, onSyncNow, onDisconnect}: {
   isOpen: boolean;
   onClose: () => void;
   records: () => {items: Item[]; folders: Folder[]};
@@ -99,7 +98,6 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
 }) {
   const [mode, setMode] = useState<'main' | 'tags'>('main');
   const [theme, setTheme] = usePref('theme');
-  const [view, setView] = usePref('view');
   const [linkOpen, setLinkOpen] = usePref('linkOpen');
   const [saveArticles, setSaveArticles] = usePref('saveArticles');
   const [dockClear, setDockClear] = usePref('dockClear');
@@ -140,9 +138,9 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
   };
 
   return (
-    <BottomSheet label="설정" isOpen={isOpen} onOpenChange={o => { if (!o) onClose(); }} height="tall">
+    // 하단바 넷째 칸: 시트가 아니라 화면을 채운다 (하단바는 그대로)
+    !isOpen ? null : <div className="settings-page">
       {mode === 'tags' ? <TagManager tags={tags} onBack={() => setMode('main')} onRename={onRenameTag} onRemove={onRemoveTag} /> : <>
-      <SheetHead title="설정" onClose={onClose} closeLabel="설정 닫기" />
       <div className="set-group">
         <p className="set-label">화면</p>
         <div className="set-row static">
@@ -151,14 +149,6 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
             <SegmentedControlItem value="system" label="시스템" />
             <SegmentedControlItem value="light" label="라이트" />
             <SegmentedControlItem value="dark" label="다크" />
-          </SegmentedControl>
-        </div>
-        <div className="set-row static">
-          <span className="grow">기본 보기</span>
-          <SegmentedControl label="기본 보기" value={view} onChange={v => setView(v as typeof view)} size="sm">
-            <SegmentedControlItem value="list" label="홈" />
-            <SegmentedControlItem value="rows" label="리스트" />
-            <SegmentedControlItem value="card" label="그리드" />
           </SegmentedControl>
         </div>
         <div className="set-row static">
@@ -281,7 +271,7 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
         </div>
       </div>
       </>}
-    </BottomSheet>
+    </div>
   );
 }
 

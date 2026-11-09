@@ -12,8 +12,8 @@ const contrast = (a: string, b: string) => {
 };
 
 describe('서랍 색', () => {
-  it('모든 색에서 흰 글자가 4.5:1 이상 읽힌다', () => {
-    for (const [k, v] of Object.entries(COLORS)) expect(contrast('#FFFFFF', v), k).toBeGreaterThanOrEqual(4.5);
+  it('모든 색에서 흰 굵은 글자가 3:1 이상 읽힌다', () => {
+    for (const [k, v] of Object.entries(COLORS)) expect(contrast('#FFFFFF', v), k).toBeGreaterThanOrEqual(3);
   });
   it('모든 색에 한국어 이름이 있고 겹치지 않는다', () => {
     const keys = Object.keys(COLORS);

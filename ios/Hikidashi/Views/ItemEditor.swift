@@ -18,6 +18,8 @@ struct ItemEditor: View {
     @State private var images: [String] = []
     @State private var siteName: String?
     @State private var emoji: String?
+    /// 사진에서 잘라 만든 아이콘
+    @State private var icon: String?
     @State private var folderId: String?
     @State private var tags: [String] = []
     @State private var error: String?
@@ -46,11 +48,17 @@ struct ItemEditor: View {
 
                     if kind == .link { urlField }
 
-                    TextField(kind == .link ? "내용 (페이지 소개문이 자동으로 들어가요)" : "메모", text: $note, axis: .vertical)
-                        .font(.body)
-                        .lineLimit(kind == .link ? 2...8 : 5...20)
-                        .focused($focus, equals: .note)
-                        .onChange(of: note) { if focus == .note { touchedNote = true } }
+                    Group {
+                        if kind == .memo {
+                            MemoNoteField(text: $note, focus: $focus)
+                        } else {
+                            TextField("내용 (페이지 소개문이 자동으로 들어가요)", text: $note, axis: .vertical)
+                                .font(.body)
+                                .lineLimit(2...8)
+                                .focused($focus, equals: .note)
+                        }
+                    }
+                    .onChange(of: note) { if focus == .note { touchedNote = true } }
                     if kind == .memo, let error { Text(error).font(.footnote.weight(.semibold)).foregroundStyle(.red) }
 
                     VStack(spacing: 0) {
@@ -61,6 +69,8 @@ struct ItemEditor: View {
                         Divider()
                         iconRow
                         if showEmoji {
+                            IconPhotoRow(icon: $icon)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
                             EmojiGrid(selection: $emoji, autoLabel: kind == .link ? "자동 (글 이미지나 사이트 로고)" : "기본 (메모 아이콘)")
                                 .padding(.bottom, 8)
                                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -95,6 +105,8 @@ struct ItemEditor: View {
             .navigationBarTitleDisplayMode(.inline)
         }
         .onAppear(perform: setup)
+        .onChange(of: emoji) { _, e in if e != nil { icon = nil } }
+        .onChange(of: icon) { _, i in if i != nil { emoji = nil } }
         .task(id: url) {
             // 주소를 적고 잠시 멈추면 자동으로 가져온다
             guard editing == nil, kind == .link, normalized != nil else { return }
@@ -150,7 +162,7 @@ struct ItemEditor: View {
             Spacer()
             Picker("서랍", selection: $folderId) {
                 ForEach(store.pickFolders) { f in
-                    Label { Text(f.name) } icon: { Image(systemName: "folder.fill").foregroundStyle(f.color.color) }.tag(Optional(f.id))
+                    Label { Text(f.name) } icon: { Image(systemName: "folder.fill").foregroundStyle(f.paint) }.tag(Optional(f.id))
                 }
                 Divider()
                 Text("미분류").tag(String?.none)
@@ -168,7 +180,9 @@ struct ItemEditor: View {
             HStack {
                 Text("아이콘").foregroundStyle(.primary)
                 Spacer()
-                if let emoji { Text(emoji).font(.title2) } else { Text(kind == .memo ? "기본" : "자동").foregroundStyle(.secondary) }
+                if let emoji { Text(emoji).font(.title2) }
+                else if let img = IconImage.image(icon) { Image(uiImage: img).resizable().scaledToFill().frame(width: 32, height: 32).clipShape(.rect(cornerRadius: 8)) }
+                else { Text(kind == .memo ? "기본" : "자동").foregroundStyle(.secondary) }
                 Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(showEmoji ? 90 : 0))
             }
@@ -193,6 +207,7 @@ struct ItemEditor: View {
         images = editing?.images ?? []
         siteName = src?.siteName
         emoji = src?.emoji
+        icon = editing?.icon ?? request.prefill?.icon
         folderId = editing != nil ? editing?.folderId : (src?.folderId ?? defaultFolderId)
         tags = src?.tags ?? []
         touchedTitle = !title.isEmpty
@@ -227,6 +242,7 @@ struct ItemEditor: View {
     private func submit() {
         let base = ItemDraft(kind: kind, title: title.trimmingCharacters(in: .whitespacesAndNewlines), note: note.trimmingCharacters(in: .whitespacesAndNewlines), emoji: emoji, folderId: folderId, tags: tags)
         var d = base
+        d.icon = emoji == nil ? icon : nil
         if kind == .link {
             guard !url.trimmingCharacters(in: .whitespaces).isEmpty else { error = "저장할 주소를 넣어주세요"; return }
             guard let u = normalizeURL(url) else { error = "주소 형식을 확인해주세요. 예: example.com/article"; return }

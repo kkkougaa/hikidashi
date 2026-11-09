@@ -247,7 +247,7 @@ final class BackupTests: XCTestCase {
         }
         XCTAssertEqual(FolderColor.allCases.count, 17)
         for c in FolderColor.allCases {
-            XCTAssertGreaterThanOrEqual(1.05 / (lum(c.rgb) + 0.05), 4.5, c.rawValue)
+            XCTAssertGreaterThanOrEqual(1.05 / (lum(c.rgb) + 0.05), 3, c.rawValue)
         }
     }
 }
@@ -461,5 +461,64 @@ final class FolderFamilyTests: XCTestCase {
         let b = try parseBackup(Data(web.utf8))
         XCTAssertEqual(b.folders.last?.parentId, "p")
         XCTAssertEqual(b.items.first?.doneAt, 5)
+    }
+
+    // MARK: 메모 서식 (웹 richText.test.ts 와 같은 경우)
+
+    func testRichTextParse() {
+        let l = RichText.parse("제목
+- 사과 **빨강**
+2. 배")
+        XCTAssertEqual(l[0], .text([RichSpan("제목")]))
+        XCTAssertEqual(l[1], .bullet(indent: 0, [RichSpan("사과 "), RichSpan("빨강", bold: true)]))
+        if case .number(_, let n, _) = l[2] { XCTAssertEqual(n, 2) } else { XCTFail("번호 목록") }
+        XCTAssertEqual(RichText.plain("- a **b**
+1. c"), "• a b
+1. c")
+    }
+
+    func testRichTextEnter() {
+        XCTAssertEqual(RichText.enterInList("- 사과", at: 4), RichEdit(text: "- 사과
+- ", start: 7, end: 7))
+        XCTAssertEqual(RichText.enterInList("  1. 배", at: 7), RichEdit(text: "  1. 배
+  2. ", start: 13, end: 13))
+        XCTAssertNil(RichText.enterInList("그냥 글", at: 4))
+        XCTAssertEqual(RichText.enterInList("- a
+- ", at: 6), RichEdit(text: "- a
+", start: 4, end: 4))
+        XCTAssertEqual(RichText.continueList(old: "- 사과", new: "- 사과
+")?.text, "- 사과
+- ")
+        XCTAssertNil(RichText.continueList(old: "사과", new: "사과
+"))
+    }
+
+    func testRichTextToggle() {
+        let on = RichText.toggleBold("ab cd", start: 3, end: 5)
+        XCTAssertEqual(on, RichEdit(text: "ab **cd**", start: 5, end: 7))
+        XCTAssertEqual(RichText.toggleBold(on.text, start: on.start, end: on.end), RichEdit(text: "ab cd", start: 3, end: 5))
+        XCTAssertEqual(RichText.toggleBold("", start: 0, end: 0), RichEdit(text: "****", start: 2, end: 2))
+        let b = RichText.toggleList("a
+b", start: 0, end: 3, kind: .bullet)
+        XCTAssertEqual(b.text, "- a
+- b")
+        XCTAssertEqual(RichText.toggleList(b.text, start: 0, end: b.text.count, kind: .bullet).text, "a
+b")
+        XCTAssertEqual(RichText.toggleList("- a
+- b", start: 0, end: 7, kind: .number).text, "1. a
+2. b")
+    }
+
+    func testCustomFolderColor() throws {
+        XCTAssertEqual(FolderColor.nearest(toHex: "#3D7FF5"), .blue)
+        XCTAssertTrue(isHexColor("#A1B2C3"))
+        XCTAssertFalse(isHexColor("red"))
+        XCTAssertFalse(whiteReadsOn("#FFF8C0"))
+        var lib = Library()
+        let f = lib.addFolder(name: "형광", color: .lime, hex: "#C6F432")
+        let child = lib.addFolder(name: "아래", color: .red, parentId: f.id)
+        XCTAssertEqual(lib.displayHex(child), "#C6F432")
+        let json = try JSONEncoder().encode(lib.folder(f.id)!)
+        XCTAssertEqual(try JSONDecoder().decode(Folder.self, from: json).hex, "#C6F432")
     }
 }

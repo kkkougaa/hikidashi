@@ -1,9 +1,9 @@
 import {useState} from 'react';
-import {ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, Plus} from 'lucide-react';
+import {ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, Pipette, Plus} from 'lucide-react';
 import {BottomSheet} from '@astryxdesign/core/BottomSheet';
-import {COLORS, COLOR_NAMES, type ColorKey, type Folder} from '../data/types';
+import {COLORS, COLOR_NAMES, nearestColor, type ColorKey, type Folder} from '../data/types';
 import {orderedFolders} from '../data/folders';
-import {ConfirmButton, cssVar, SheetHead} from './bits';
+import {ConfirmButton, cssVar, folderColor, SheetHead} from './bits';
 
 type Mode = {type: 'list'} | {type: 'edit'; folder: Folder | null};
 
@@ -12,8 +12,8 @@ export function FoldersSheet({isOpen, onClose, folders, counts, onAdd, onUpdate,
   onClose: () => void;
   folders: Folder[];
   counts: Map<string, number>;
-  onAdd: (name: string, color: ColorKey, parentId: string | null) => void;
-  onUpdate: (id: string, patch: {name?: string; color?: ColorKey; parentId?: string | null}) => void;
+  onAdd: (name: string, color: ColorKey, parentId: string | null, hex: string | null) => void;
+  onUpdate: (id: string, patch: {name?: string; color?: ColorKey; hex?: string | null; parentId?: string | null}) => void;
   onRemove: (f: Folder) => void;
   onReorder: (ids: string[]) => void;
 }) {
@@ -41,11 +41,11 @@ export function FoldersSheet({isOpen, onClose, folders, counts, onAdd, onUpdate,
             {rows.map(({folder: f, depth}) => {
               const sib = siblingsOf(f);
               const n = sib.findIndex(x => x.id === f.id);
-              const color = depth && f.parentId ? byId.get(f.parentId)?.color ?? f.color : f.color;
+              const shown = depth && f.parentId ? byId.get(f.parentId) ?? f : f;
               return (
                 <div key={f.id} className="set-row split" data-depth={depth || undefined}>
                   <button type="button" className="split-main" onClick={() => setMode({type: 'edit', folder: f})}>
-                    <span className="dot" data-sub={depth || undefined} style={cssVar(COLORS[color])} aria-hidden="true" />
+                    <span className="dot" data-sub={depth || undefined} style={cssVar(folderColor(shown))} aria-hidden="true" />
                     <span className="grow">{f.name}</span>
                     <span className="val num">{counts.get(f.id) ?? 0}개</span>
                     <ChevronRight className="chev" size={18} aria-hidden="true" />
@@ -71,10 +71,10 @@ export function FoldersSheet({isOpen, onClose, folders, counts, onAdd, onUpdate,
           parents={rows.filter(r => !r.depth && r.folder.id !== mode.folder?.id).map(r => r.folder)}
           hasChildren={!!mode.folder && folders.some(f => f.parentId === mode.folder!.id)}
           onBack={() => setMode({type: 'list'})}
-          onSave={(name, color, parentId) => {
+          onSave={(name, color, parentId, hex) => {
             const parent = parentId ? byId.get(parentId) : undefined;
-            if (mode.folder) onUpdate(mode.folder.id, {name, color: parent?.color ?? color, parentId});
-            else onAdd(name, color, parentId);
+            if (mode.folder) onUpdate(mode.folder.id, parent ? {name, color: parent.color, hex: parent.hex ?? null, parentId} : {name, color, hex, parentId});
+            else onAdd(name, color, parentId, hex);
             setMode({type: 'list'});
           }}
           onRemove={() => { if (mode.folder) onRemove(mode.folder); setMode({type: 'list'}); }}
@@ -86,17 +86,18 @@ export function FoldersSheet({isOpen, onClose, folders, counts, onAdd, onUpdate,
 
 function FolderForm({folder, count, taken, parents, hasChildren, onBack, onSave, onRemove}: {
   folder: Folder | null; count: number; taken: string[]; parents: Folder[]; hasChildren: boolean;
-  onBack: () => void; onSave: (name: string, color: ColorKey, parentId: string | null) => void; onRemove: () => void;
+  onBack: () => void; onSave: (name: string, color: ColorKey, parentId: string | null, hex: string | null) => void; onRemove: () => void;
 }) {
   const [name, setName] = useState(folder?.name ?? '');
   const [color, setColor] = useState<ColorKey>(folder?.color ?? 'blue');
+  const [hex, setHex] = useState<string | null>(folder?.hex ?? null);
   const [parentId, setParentId] = useState<string>(folder?.parentId && parents.some(p => p.id === folder.parentId) ? folder.parentId : '');
   const [err, setErr] = useState<string | null>(null);
   const submit = () => {
     const n = name.trim();
     if (!n) return setErr('서랍 이름을 적어주세요');
     if (taken.includes(n)) return setErr('같은 이름의 서랍이 이미 있어요');
-    onSave(n, color, parentId || null);
+    onSave(n, hex ? nearestColor(hex) : color, parentId || null, hex);
   };
   return (
     <form noValidate onSubmit={e => { e.preventDefault(); submit(); }} className="sheet-form">
@@ -121,11 +122,16 @@ function FolderForm({folder, count, taken, parents, hasChildren, onBack, onSave,
         <p className="form-row-label" id="color-label">색</p>
         <div className="swatches" role="radiogroup" aria-labelledby="color-label">
           {(Object.keys(COLORS) as ColorKey[]).map(k => (
-            <button key={k} type="button" role="radio" aria-checked={color === k} aria-label={COLOR_NAMES[k]}
-              className="swatch" style={cssVar(COLORS[k])} onClick={() => setColor(k)}>
-              {color === k && <Check strokeWidth={2.6} aria-hidden="true" />}
+            <button key={k} type="button" role="radio" aria-checked={!hex && color === k} aria-label={COLOR_NAMES[k]}
+              className="swatch" style={cssVar(COLORS[k])} onClick={() => { setColor(k); setHex(null); }}>
+              {!hex && color === k && <Check strokeWidth={2.6} aria-hidden="true" />}
             </button>
           ))}
+          <label className="swatch custom" data-on={hex ? true : undefined} style={hex ? cssVar(hex) : undefined} title="팔레트에서 직접 고르기">
+            <input type="color" className="sr" aria-label="팔레트에서 직접 고르기" value={hex ?? COLORS[color]}
+              onChange={e => setHex(e.target.value.toUpperCase())} />
+            {hex ? <Check strokeWidth={2.6} aria-hidden="true" /> : <Pipette size={20} strokeWidth={2.2} aria-hidden="true" />}
+          </label>
         </div>
       </div>}
       {folder && (
