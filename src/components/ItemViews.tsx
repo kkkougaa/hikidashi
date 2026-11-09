@@ -120,10 +120,11 @@ function Media({item: i}: {item: Item}) {
   const photos = i.kind === 'link' && !i.emoji ? (i.images?.length ? i.images : []) : [];
   const cover = coverOf(i);
   if (i.kind === 'link' && !i.emoji && i.video) return <span className="tl-media" data-n="video"><LoopClip src={i.video} poster={cover ?? ''} /></span>;
+  // 여러 장은 요즘 X 처럼 가로로 넘겨 본다 (높이는 같게, 각자 원래 비율)
   if (photos.length > 1) {
     return (
-      <span className="tl-media" data-n={photos.length}>
-        {photos.slice(0, 4).map((u, n) => <img key={u + n} src={u} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />)}
+      <span className="tl-strip" onPointerDown={e => e.stopPropagation()}>
+        {photos.map((u, n) => <img key={u + n} src={u} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" />)}
       </span>
     );
   }

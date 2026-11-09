@@ -94,10 +94,24 @@ struct TimelineMedia: View {
                     .clipShape(.rect(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.primary.opacity(0.08)))
             } else if item.images.count > 1 {
-                grid(Array(item.images.prefix(4)))
-                    .aspectRatio(16 / 9, contentMode: .fit)
-                    .clipShape(.rect(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.primary.opacity(0.08)))
+                // 여러 장은 요즘 X 처럼 가로로 넘겨 본다 (높이는 같게, 각자 원래 비율)
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 6) {
+                        ForEach(Array(item.images.enumerated()), id: \.offset) { _, url in
+                            CachedImage(url: url) { img in
+                                img.resizable().scaledToFit().frame(height: 260)
+                            } placeholder: {
+                                Color(.tertiarySystemFill).frame(width: 200, height: 260)
+                            }
+                            .clipShape(.rect(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.primary.opacity(0.08)))
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
+                .frame(height: 260)
             } else if let cover = item.coverImage {
                 // 한 장은 자르지 않고 원래 비율대로 (세로로 긴 건 높이를 넘지 않게 줄여서 가운데)
                 CachedImage(url: cover) { img in
@@ -112,30 +126,6 @@ struct TimelineMedia: View {
                 }
             }
         }
-    }
-
-    @ViewBuilder private func grid(_ urls: [String]) -> some View {
-        let gap: CGFloat = 2
-        switch urls.count {
-        case 2:
-            HStack(spacing: gap) { cell(urls[0]); cell(urls[1]) }
-        case 3:
-            HStack(spacing: gap) {
-                cell(urls[0])
-                VStack(spacing: gap) { cell(urls[1]); cell(urls[2]) }
-            }
-        default:
-            VStack(spacing: gap) {
-                HStack(spacing: gap) { cell(urls[0]); cell(urls[1]) }
-                HStack(spacing: gap) { cell(urls[2]); cell(urls[3]) }
-            }
-        }
-    }
-
-    private func cell(_ url: String) -> some View {
-        Color(.tertiarySystemFill)
-            .overlay { CachedImage(url: url) { $0.resizable().scaledToFill() } placeholder: { Color.clear } }
-            .clipped()
     }
 }
 
