@@ -170,8 +170,9 @@ struct SettingsScreen: View {
                         Text("다크").tag("dark")
                     }
                     Picker("기본 보기", selection: $viewMode) {
-                        Text("타임라인").tag("list")
-                        Text("미디어").tag("grid")
+                        Text("홈").tag("list")
+                        Text("리스트").tag("rows")
+                        Text("그리드").tag("grid")
                     }
                     Picker("목록 묶음", selection: $groupBy) {
                         Text("날짜").tag("day")

@@ -23,13 +23,16 @@ final class ScreenshotTests: XCTestCase {
         sleep(2) // 이미지 불러오기
         snap("01-list")
 
-        // 미디어(카드) 보기: 하단바
-        let media = app.buttons["미디어"].firstMatch
+        // 그리드(카드) 보기: 하단바
+        let media = app.buttons["그리드"].firstMatch
         if media.waitForExistence(timeout: 3) {
             media.tap()
             sleep(1)
             snap("02-grid")
-            app.buttons["타임라인"].firstMatch.tap()
+            app.buttons["리스트"].firstMatch.tap()
+            sleep(1)
+            snap("02-rows")
+            app.buttons["홈"].firstMatch.tap()
         }
 
         // 메모 보기

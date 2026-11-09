@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {CheckCheck, CircleCheck, Eye, EyeOff, Folder as FolderIcon, House, StickyNote, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
+import {CheckCheck, CircleCheck, Eye, EyeOff, Folder as FolderIcon, House, Rows3, StickyNote, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
 import {DropdownMenu} from '@astryxdesign/core/DropdownMenu';
 import {afterSheet, animate, haptic} from './lib/motion';
 import {MobileNav} from '@astryxdesign/core/MobileNav';
@@ -21,7 +21,7 @@ import {domainOf, findUrl, guessTitle, normalizeUrl, parseTags} from './lib/form
 import {fetchArticle, supportsReader} from './lib/reader';
 import {markRecent, usePref} from './lib/prefs';
 import {Block, cssVar} from './components/bits';
-import {CardGrid, HighlightList, nameOf, TimelineList, type ItemActions} from './components/ItemViews';
+import {CardGrid, DayList, HighlightList, nameOf, SiteList, TimelineList, type ItemActions} from './components/ItemViews';
 import {ItemSheet} from './components/ItemSheet';
 import {MemoSheet} from './components/MemoSheet';
 import {FoldersSheet} from './components/FoldersSheet';
@@ -174,7 +174,7 @@ export function App() {
     toTop(false);
   };
   const pick = (s: Scope) => { setNavOpen(false); goto(s); };
-  const changeView = (v: 'list' | 'card') => { if (v !== view) animate(() => setView(v)); };
+  const changeView = (v: 'list' | 'rows' | 'card') => { if (v !== view) animate(() => setView(v)); };
   const openAdd = () => { setEditing(null); setPrefill(undefined); setSheet('item'); };
 
   const defaultFolderId = scope.type === 'folder' ? scope.id
@@ -461,9 +461,13 @@ export function App() {
   } else if (scope.type === 'highlights') {
     body = <HighlightList items={list} folderMap={folderMap} onOpen={i => act.openReader(i)} onRemove={(i, h) => lib.toggleHighlight(i.id, h)} />;
   } else {
-    body = view === 'list'
-      ? <TimelineList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} groupBy={scope.type === 'done' ? 'none' : groupBy} />
-      : <CardGrid items={list} folderMap={folderMap} showFolder={showFolder} act={act} />;
+    body = view === 'card'
+      ? <CardGrid items={list} folderMap={folderMap} showFolder={showFolder} act={act} />
+      : view === 'rows'
+        ? (groupBy === 'site' && scope.type !== 'done'
+          ? <SiteList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} />
+          : <DayList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} />)
+        : <TimelineList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} groupBy={scope.type === 'done' ? 'none' : groupBy} />;
   }
 
   const allIds = list.map(i => i.id);
@@ -536,8 +540,9 @@ export function App() {
       ) : (
         <div className="fab-dock" data-collapsed={collapsed || undefined}>
           <nav className="dockbar" aria-label="화면" inert={collapsed || undefined}>
-            <button type="button" aria-label="타임라인" aria-pressed={view === 'list'} onClick={() => { if (view === 'list') toTop(); else changeView('list'); }}><House size={24} strokeWidth={2} /></button>
-            <button type="button" aria-label="미디어" aria-pressed={view === 'card'} onClick={() => { if (view === 'card') toTop(); else changeView('card'); }}><LayoutGrid size={24} strokeWidth={2} /></button>
+            <button type="button" aria-label="홈" aria-pressed={view === 'list'} onClick={() => { if (view === 'list') toTop(); else changeView('list'); }}><House size={24} strokeWidth={2} /></button>
+            <button type="button" aria-label="리스트" aria-pressed={view === 'rows'} onClick={() => { if (view === 'rows') toTop(); else changeView('rows'); }}><Rows3 size={24} strokeWidth={2} /></button>
+            <button type="button" aria-label="그리드" aria-pressed={view === 'card'} onClick={() => { if (view === 'card') toTop(); else changeView('card'); }}><LayoutGrid size={24} strokeWidth={2} /></button>
             <button type="button" aria-label="설정" onClick={() => setSheet('settings')}><Settings size={24} strokeWidth={2} /></button>
           </nav>
           <PullFab onTap={openAdd} onPull={quickAdd} />

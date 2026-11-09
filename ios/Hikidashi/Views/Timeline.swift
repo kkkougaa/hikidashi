@@ -99,10 +99,17 @@ struct TimelineMedia: View {
                     .clipShape(.rect(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.primary.opacity(0.08)))
             } else if let cover = item.coverImage {
-                RemoteImage(url: cover)
-                    .frame(maxHeight: 300)
-                    .clipShape(.rect(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.primary.opacity(0.08)))
+                // 한 장은 자르지 않고 원래 비율대로 (세로로 긴 건 높이를 넘지 않게 줄여서 가운데)
+                CachedImage(url: cover) { img in
+                    img.resizable().scaledToFit()
+                        .frame(maxHeight: 560)
+                        .clipShape(.rect(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.primary.opacity(0.08)))
+                        .frame(maxWidth: .infinity)
+                } placeholder: {
+                    Color(.tertiarySystemFill).aspectRatio(16 / 9, contentMode: .fit)
+                        .clipShape(.rect(cornerRadius: 16, style: .continuous))
+                }
             }
         }
     }
@@ -164,14 +171,19 @@ struct DockBar: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            tab("타임라인", "house", on: viewMode != "grid") { if viewMode == "grid" { withAnimation(.snappy) { viewMode = "list" } } else { onReselect() } }
-            tab("미디어", "square.grid.2x2", on: viewMode == "grid") { if viewMode != "grid" { withAnimation(.snappy) { viewMode = "grid" } } else { onReselect() } }
+            tab("홈", "house", on: viewMode == "list") { pick("list") }
+            tab("리스트", "list.bullet.rectangle", on: viewMode == "rows") { pick("rows") }
+            tab("그리드", "square.grid.2x2", on: viewMode == "grid") { pick("grid") }
             tab("설정", "gearshape", on: false, action: onSettings)
         }
         .padding(5)
         .frame(height: 60)
         .background { glass }
         .sensoryFeedback(.selection, trigger: viewMode)
+    }
+
+    private func pick(_ mode: String) {
+        if viewMode == mode { onReselect() } else { withAnimation(.snappy) { viewMode = mode } }
     }
 
     private func tab(_ title: String, _ icon: String, on: Bool, action: @escaping () -> Void) -> some View {

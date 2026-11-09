@@ -145,8 +145,14 @@ struct ItemsScreen: View {
             ForEach(sections(items), id: \.0) { bucket, group in
                 Section {
                     ForEach(group) { item in
-                        TimelineRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id), selected: store.selection.map { $0.contains(item.id) })
-                            .itemActions(item, store: store)
+                        // 홈은 타임라인, 리스트는 한 줄씩
+                        if viewMode == "rows" {
+                            ItemRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id), selected: store.selection.map { $0.contains(item.id) })
+                                .itemActions(item, store: store)
+                        } else {
+                            TimelineRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id), selected: store.selection.map { $0.contains(item.id) })
+                                .itemActions(item, store: store)
+                        }
                     }
                 } header: {
                     HStack {

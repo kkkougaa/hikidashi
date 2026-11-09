@@ -155,8 +155,9 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
         <div className="set-row static">
           <span className="grow">기본 보기</span>
           <SegmentedControl label="기본 보기" value={view} onChange={v => setView(v as typeof view)} size="sm">
-            <SegmentedControlItem value="list" label="타임라인" />
-            <SegmentedControlItem value="card" label="미디어" />
+            <SegmentedControlItem value="list" label="홈" />
+            <SegmentedControlItem value="rows" label="리스트" />
+            <SegmentedControlItem value="card" label="그리드" />
           </SegmentedControl>
         </div>
         <div className="set-row static">

@@ -3,7 +3,8 @@ import {useEffect, useState} from 'react';
 /** 이 기기에만 두는 설정 (동기화하지 않는다) */
 export interface Prefs {
   theme: 'system' | 'light' | 'dark';
-  view: 'list' | 'card';
+  /** list: 타임라인(홈), rows: 한 줄 목록, card: 그리드 */
+  view: 'list' | 'rows' | 'card';
   /** '' 첫 번째 서랍, 'none' 미분류, 그 밖 서랍 id */
   defaultFolder: string;
   /** 링크를 누르면 리더 / 새 탭 */
