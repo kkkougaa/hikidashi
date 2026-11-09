@@ -32,8 +32,6 @@ struct ItemsScreen: View {
             }
         }
         .navigationTitle(store.selection.map { $0.isEmpty ? "항목 고르기" : "\($0.count)개 선택" } ?? store.title(of: scope))
-        // 큰 제목을 버튼 줄과 같은 높이에 둬서 제목 위아래 빈 공간을 맞춘다
-        .toolbarTitleDisplayMode(.inlineLarge)
         // 검색창은 평소엔 숨기고, 목록을 아래로 당기면 나온다
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "제목, 메모, 태그, 주소, 본문")
         .onChange(of: query) { _, q in if q.isEmpty { store.forgetArticleTexts() } }
