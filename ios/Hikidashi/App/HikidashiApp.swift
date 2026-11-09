@@ -55,8 +55,9 @@ struct RootView: View {
                                 .scaleEffect(x: store.chromeCollapsed ? 0.18 : 1, y: store.chromeCollapsed ? 0.7 : 1, anchor: .trailing)
                                 .blur(radius: store.chromeCollapsed ? 6 : 0)
                                 .opacity(store.chromeCollapsed ? 0 : 1)
+                                // + 버튼 바로 앞까지 늘려서, 바깥 여백(20)과 같은 간격을 둔다
+                                .padding(.trailing, store.chromeCollapsed ? 20 : 60 + 20)
                                 .frame(maxWidth: .infinity, alignment: store.chromeCollapsed ? .trailing : .leading)
-                                .padding(.trailing, store.chromeCollapsed ? 20 : 0)
                                 .allowsHitTesting(!store.chromeCollapsed)
                             PullAddButton(
                                 onTap: { store.editor = EditorRequest() },

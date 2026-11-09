@@ -158,6 +158,8 @@ struct DockBar: View {
     var collapsed: Bool
     var onSettings: () -> Void
     var onReselect: () -> Void = {}
+    /// 투명도 0(불투명)~0.8, 설정에서 바꾼다
+    @AppStorage("dockClear") private var dockClear = 0.4
 
     var body: some View {
         HStack(spacing: 2) {
@@ -181,7 +183,7 @@ struct DockBar: View {
             // 글씨 없이 아이콘만 (읽어 주는 이름은 accessibilityLabel)
             Image(systemName: on ? "\(icon).fill" : icon).font(.system(size: 21, weight: .semibold))
             .foregroundStyle(on ? Color.brand : .secondary)
-            .frame(minWidth: 58, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 4)
             .background(on ? Color.primary.opacity(0.07) : .clear, in: .capsule)
             .contentShape(.capsule)
@@ -195,7 +197,7 @@ struct DockBar: View {
         let shape = Capsule(style: .continuous)
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            Color.clear.glassEffect(.regular.interactive(), in: shape)
+            Color.clear.glassEffect(.regular.tint(Color(.systemBackground).opacity(max(0, 0.85 - dockClear))).interactive(), in: shape)
         } else {
             fallback(shape)
         }
@@ -206,6 +208,7 @@ struct DockBar: View {
 
     private func fallback(_ shape: Capsule) -> some View {
         shape.fill(.ultraThinMaterial)
+            .overlay(shape.fill(Color(.systemBackground).opacity(max(0, 0.85 - dockClear))))
             .overlay(shape.strokeBorder(.white.opacity(0.35), lineWidth: 1))
             .shadow(color: .black.opacity(0.15), radius: 14, y: 8)
     }

@@ -102,6 +102,7 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
   const [view, setView] = usePref('view');
   const [linkOpen, setLinkOpen] = usePref('linkOpen');
   const [saveArticles, setSaveArticles] = usePref('saveArticles');
+  const [dockClear, setDockClear] = usePref('dockClear');
   const [groupBy, setGroupBy] = usePref('groupBy');
   const [defaultFolder, setDefaultFolder] = usePref('defaultFolder');
   const [articles, setArticles] = useState(0);
@@ -159,6 +160,12 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
             <SegmentedControlItem value="rows" label="리스트" />
             <SegmentedControlItem value="card" label="그리드" />
           </SegmentedControl>
+        </div>
+        <div className="set-row static">
+          <span className="grow">하단바 투명도</span>
+          <input className="set-range" type="range" min={0} max={0.8} step={0.05} value={dockClear} aria-label="하단바 투명도"
+            aria-valuetext={`${Math.round(dockClear * 100)}%`} onChange={e => setDockClear(Number(e.target.value))} />
+          <span className="val num">{Math.round(dockClear * 100)}%</span>
         </div>
         <div className="set-row static">
           <span className="grow">목록 묶음</span>

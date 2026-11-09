@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from 'react';
 import {CheckCheck, CircleCheck, Eye, EyeOff, Folder as FolderIcon, House, Rows3, StickyNote, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
 import {DropdownMenu} from '@astryxdesign/core/DropdownMenu';
 import {afterSheet, animate, haptic} from './lib/motion';
@@ -75,6 +75,7 @@ export function App() {
   const [recent] = usePref('recent');
   const [showNsfw, setShowNsfw] = usePref('showNsfw');
   const [groupBy] = usePref('groupBy');
+  const [dockClear] = usePref('dockClear');
   const [navOpen, setNavOpen] = useState(false);
   const [sheet, setSheet] = useState<null | 'item' | 'folders' | 'settings'>(null);
   const [editing, setEditing] = useState<Item | null>(null);
@@ -538,7 +539,7 @@ export function App() {
           </div>
         </div>
       ) : (
-        <div className="fab-dock" data-collapsed={collapsed || undefined}>
+        <div className="fab-dock" data-collapsed={collapsed || undefined} style={{['--dock-solid']: `${Math.round((1 - dockClear) * 100)}%`} as CSSProperties}>
           <nav className="dockbar" aria-label="화면" inert={collapsed || undefined}>
             <button type="button" aria-label="홈" aria-pressed={view === 'list'} onClick={() => { if (view === 'list') toTop(); else changeView('list'); }}><House size={24} strokeWidth={2} /></button>
             <button type="button" aria-label="리스트" aria-pressed={view === 'rows'} onClick={() => { if (view === 'rows') toTop(); else changeView('rows'); }}><Rows3 size={24} strokeWidth={2} /></button>

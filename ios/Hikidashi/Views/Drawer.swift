@@ -147,6 +147,7 @@ struct SettingsScreen: View {
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("viewMode") private var viewMode = "list"
     @AppStorage("groupBy") private var groupBy = "day"
+    @AppStorage("dockClear") private var dockClear = 0.4
     @AppStorage("linkOpen") private var linkOpen = "reader"
     @AppStorage("saveArticles") private var saveArticles = true
     @State private var cacheSize = 0
@@ -177,6 +178,12 @@ struct SettingsScreen: View {
                     Picker("목록 묶음", selection: $groupBy) {
                         Text("날짜").tag("day")
                         Text("사이트").tag("site")
+                    }
+                    LabeledContent("하단바 투명도") {
+                        HStack {
+                            Slider(value: $dockClear, in: 0...0.8, step: 0.05).frame(maxWidth: 160)
+                            Text("\(Int((dockClear * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
+                        }
                     }
                 }
                 Section {

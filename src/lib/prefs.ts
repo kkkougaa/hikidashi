@@ -19,11 +19,13 @@ export interface Prefs {
   showNsfw: boolean;
   /** 목록 묶음: 날짜별 / 사이트별 */
   groupBy: 'day' | 'site';
+  /** 하단바 투명도 0(불투명)~0.8 */
+  dockClear: number;
 }
 
 const DEFAULTS: Prefs = {
   theme: 'system', view: 'list', defaultFolder: '', linkOpen: 'reader', saveArticles: true,
-  readerFont: 'sans', readerSize: 18, readerSpacing: 1.75, recent: [], showNsfw: false, groupBy: 'day',
+  readerFont: 'sans', readerSize: 18, readerSpacing: 1.75, recent: [], showNsfw: false, groupBy: 'day', dockClear: 0.4,
 };
 
 const KEY = 'hikidashi-prefs';
