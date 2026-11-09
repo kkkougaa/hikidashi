@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {clip, logoUrl, parseFxTweet, parseReader, tidyTitle, xStatusId, youtubeId} from './pageInfo';
+import {clip, directMedia, logoUrl, parseFxTweet, parseReader, tidyTitle, xStatusId, youtubeId} from './pageInfo';
 
 describe('링크 정보 정리', () => {
   it('유튜브 주소에서 영상 id 를 찾는다', () => {
@@ -76,14 +76,32 @@ describe('링크 정보 정리', () => {
       author: {name: '홍길동', screen_name: 'hong', avatar_url: 'https://pbs.twimg.com/profile_images/1/a_normal.jpg'},
       media: {photos: [{url: 'https://pbs.twimg.com/media/photo.jpg'}]},
     });
-    expect(withPhoto).toEqual({title: undefined, description: '오늘 찍은 사진\n두 번째 줄', image: 'https://pbs.twimg.com/media/photo.jpg', siteName: 'X · @hong'});
-    const video = parseFxTweet({text: '영상', author: {screen_name: 'a'}, media: {videos: [{thumbnail_url: 'https://pbs.twimg.com/thumb.jpg'}]}});
+    expect(withPhoto).toEqual({title: undefined, description: '오늘 찍은 사진\n두 번째 줄', image: 'https://pbs.twimg.com/media/photo.jpg', avatar: 'https://pbs.twimg.com/profile_images/1/a_200x200.jpg', siteName: 'X · @hong'});
+    const video = parseFxTweet({text: '영상', author: {screen_name: 'a'}, media: {videos: [{url: 'https://video.twimg.com/v.mp4', thumbnail_url: 'https://pbs.twimg.com/thumb.jpg', type: 'video'}]}});
     expect(video.image).toBe('https://pbs.twimg.com/thumb.jpg');
+    expect(video.video).toBe('https://video.twimg.com/v.mp4');
+    // 움짤도 mp4 로 온다
+    const gif = parseFxTweet({text: '움짤', media: {all: [{type: 'gif', url: 'https://video.twimg.com/tweet_video/g.mp4', thumbnail_url: 'https://pbs.twimg.com/g.jpg'}]}});
+    expect(gif.video).toBe('https://video.twimg.com/tweet_video/g.mp4');
+    expect(parseFxTweet({text: '사진', media: {photos: [{url: 'https://pbs.twimg.com/p.jpg'}]}}).video).toBeUndefined();
+    // 타임라인 보기용: 프로필 사진과 사진 여러 장
+    const many = parseFxTweet({text: '여러 장', author: {screen_name: 'a', avatar_url: 'https://pbs.twimg.com/profile_images/1/a_normal.jpg'},
+      media: {photos: [1, 2, 3, 4, 5].map(n => ({url: `https://pbs.twimg.com/${n}.jpg`}))}});
+    expect(many.avatar).toBe('https://pbs.twimg.com/profile_images/1/a_200x200.jpg');
+    expect(many.images).toEqual([1, 2, 3, 4].map(n => `https://pbs.twimg.com/${n}.jpg`));
+    expect(many.image).toBe('https://pbs.twimg.com/1.jpg');
+    expect(parseFxTweet({text: '한 장', media: {photos: [{url: 'https://pbs.twimg.com/1.jpg'}]}}).images).toBeUndefined();
     // 사진이 없으면 작성자 프로필 사진
     const noMedia = parseFxTweet({text: '글만', author: {name: 'A', screen_name: 'a', avatar_url: 'https://pbs.twimg.com/profile_images/1/a_normal.jpg'}});
     expect(noMedia.image).toBe('https://pbs.twimg.com/profile_images/1/a_200x200.jpg');
     expect(noMedia.title).toBeUndefined();
     expect(noMedia.description).toBe('글만');
     expect(parseFxTweet({text: '', author: {name: 'A'}}).title).toBe('A의 게시물');
+  });
+
+  it('영상·그림 파일 주소는 페이지를 읽지 않고 바로 쓴다', () => {
+    expect(directMedia('https://cdn.example.com/clips/%EA%B3%A0%EC%96%91%EC%9D%B4.mp4?x=1')).toEqual({title: '고양이.mp4', video: 'https://cdn.example.com/clips/%EA%B3%A0%EC%96%91%EC%9D%B4.mp4?x=1', siteName: 'cdn.example.com'});
+    expect(directMedia('https://www.example.com/a/b.GIF')).toEqual({title: 'b.GIF', image: 'https://www.example.com/a/b.GIF', siteName: 'example.com'});
+    expect(directMedia('https://example.com/post/1')).toBeNull();
   });
 });

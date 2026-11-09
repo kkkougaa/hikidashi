@@ -1,6 +1,5 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {CircleCheck, Folder as FolderIcon, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Rows3, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
-import {SegmentedControl, SegmentedControlItem} from '@astryxdesign/core/SegmentedControl';
+import {CheckCheck, CircleCheck, Eye, EyeOff, Folder as FolderIcon, MessageSquareText, StickyNote, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
 import {DropdownMenu} from '@astryxdesign/core/DropdownMenu';
 import {afterSheet, animate, haptic} from './lib/motion';
 import {MobileNav} from '@astryxdesign/core/MobileNav';
@@ -13,7 +12,8 @@ import {Text} from '@astryxdesign/core/Text';
 import {useToast} from '@astryxdesign/core/Toast';
 import {uid, useLibrary} from './data/library';
 import {COLORS, type Folder, type Item, type ItemDraft} from './data/types';
-import {getMeta, hasArticle, putArticle, setMeta} from './data/db';
+import {allArticleTexts, getMeta, hasArticle, putArticle, setMeta} from './data/db';
+import {displayFolders, familyOf, isNsfw, orderedFolders, withNsfw} from './data/folders';
 import {disconnect, dropboxConfigured, dropboxFile, finishLogin, isConnected, latestCursor, advanceCursor, NotConnected, startLogin, waitForChange} from './data/dropbox';
 import {syncFile} from './data/fileSync';
 import {deriveKey, newKdf, openEnvelope, readEnvelope, WrongPassphrase, type Kdf, type Vault} from './data/vault';
@@ -21,7 +21,7 @@ import {domainOf, findUrl, guessTitle, normalizeUrl, parseTags} from './lib/form
 import {fetchArticle, supportsReader} from './lib/reader';
 import {markRecent, usePref} from './lib/prefs';
 import {Block, cssVar} from './components/bits';
-import {CardGrid, DayList, HighlightList, nameOf, type ItemActions} from './components/ItemViews';
+import {CardGrid, HighlightList, nameOf, TimelineList, type ItemActions} from './components/ItemViews';
 import {ItemSheet} from './components/ItemSheet';
 import {MemoSheet} from './components/MemoSheet';
 import {FoldersSheet} from './components/FoldersSheet';
@@ -32,11 +32,16 @@ import {fetchPageInfo} from './lib/pageInfo';
 
 /** 보고 있는 범위 */
 type Scope =
-  | {type: 'all'} | {type: 'star'} | {type: 'none'} | {type: 'highlights'} | {type: 'broken'}
+  | {type: 'all'} | {type: 'star'} | {type: 'none'} | {type: 'highlights'} | {type: 'broken'} | {type: 'done'} | {type: 'memos'}
   | {type: 'folder'; id: string} | {type: 'tag'; tag: string};
 
 const dotIcon = (color: string) => {
   const Dot = () => <span className="nav-dot" aria-hidden="true"><span className="dot" style={cssVar(color)} /></span>;
+  return Dot;
+};
+/** 하위 서랍: 들여 쓰고 작은 점 */
+const subDotIcon = (color: string) => {
+  const Dot = () => <span className="nav-dot sub" aria-hidden="true"><span className="dot" style={cssVar(color)} /></span>;
   return Dot;
 };
 
@@ -68,6 +73,8 @@ export function App() {
   const [saveArticles] = usePref('saveArticles');
   const [defaultFolderPref] = usePref('defaultFolder');
   const [recent] = usePref('recent');
+  const [showNsfw, setShowNsfw] = usePref('showNsfw');
+  const [groupBy] = usePref('groupBy');
   const [navOpen, setNavOpen] = useState(false);
   const [sheet, setSheet] = useState<null | 'item' | 'folders' | 'settings'>(null);
   const [editing, setEditing] = useState<Item | null>(null);
@@ -79,6 +86,9 @@ export function App() {
   const [tagText, setTagText] = useState('');
   const scrollRef = useRef<HTMLElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  /** 하단바를 + 버튼으로 접었는지 (아래로 스크롤할 때) */
+  const [collapsed, setCollapsed] = useState(false);
+  const lastTop = useRef(0);
   const toTop = (smooth = true) => scrollRef.current?.scrollTo({top: 0, behavior: smooth ? 'smooth' : 'auto'});
 
   useEffect(() => {
@@ -91,24 +101,33 @@ export function App() {
   const live = (i: Item | null) => (i ? lib.items.find(x => x.id === i.id) ?? null : null);
   const memoLive = live(memo);
   const readerLive = live(reader);
-  const folderMap = useMemo(() => new Map(lib.folders.map(f => [f.id, f])), [lib.folders]);
+  const folderMap = useMemo(() => displayFolders(lib.folders), [lib.folders]);
+  /** 고르기 목록용: 상위 다음에 하위, 이름은 상위-하위 */
+  const pickFolders = useMemo(() => orderedFolders(lib.folders).map(({folder}) => folderMap.get(folder.id)!), [lib.folders, folderMap]);
+  // NSFW 를 숨기면 어디에도 안 나온다. 확인 완료한 건 완료함에만
+  const pool = useMemo(() => (showNsfw ? lib.items : lib.items.filter(i => !isNsfw(i))), [lib.items, showNsfw]);
+  const active = useMemo(() => pool.filter(i => !i.doneAt), [pool]);
+  const doneItems = useMemo(() => pool.filter(i => i.doneAt).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0)), [pool]);
   useEffect(() => { if (scope.type === 'folder' && lib.ready && !folderMap.has(scope.id)) setScope({type: 'all'}); }, [scope, folderMap, lib.ready]);
 
   const counts = useMemo(() => {
     const m = new Map<string, number>();
-    for (const i of lib.items) if (i.folderId) m.set(i.folderId, (m.get(i.folderId) ?? 0) + 1);
+    for (const i of active) if (i.folderId) m.set(i.folderId, (m.get(i.folderId) ?? 0) + 1);
+    // 상위 서랍 숫자에는 하위 서랍 것도 더한다
+    for (const f of lib.folders) if (f.parentId && folderMap.has(f.parentId) && m.get(f.id)) m.set(f.parentId, (m.get(f.parentId) ?? 0) + m.get(f.id)!);
     return m;
-  }, [lib.items]);
+  }, [active, lib.folders, folderMap]);
   const tags = useMemo(() => {
     const m = new Map<string, number>();
-    for (const i of lib.items) for (const t of i.tags) m.set(t, (m.get(t) ?? 0) + 1);
+    for (const i of pool) for (const t of i.tags) m.set(t, (m.get(t) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-  }, [lib.items]);
+  }, [pool]);
   const allTags = useMemo(() => [...tags].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko')).map(([t]) => t), [tags]);
-  const unfiled = useMemo(() => lib.items.filter(i => !i.folderId || !folderMap.has(i.folderId)).length, [lib.items, folderMap]);
-  const highlighted = useMemo(() => lib.items.filter(i => i.highlights?.length), [lib.items]);
-  const broken = useMemo(() => lib.items.filter(i => i.brokenAt), [lib.items]);
-  const recentItems = useMemo(() => recent.map(id => lib.items.find(i => i.id === id)).filter((i): i is Item => !!i).slice(0, 5), [recent, lib.items]);
+  const unfiled = useMemo(() => active.filter(i => !i.folderId || !folderMap.has(i.folderId)).length, [active, folderMap]);
+  const highlighted = useMemo(() => pool.filter(i => i.highlights?.length), [pool]);
+  const broken = useMemo(() => active.filter(i => i.brokenAt), [active]);
+  const recentItems = useMemo(() => recent.map(id => pool.find(i => i.id === id)).filter((i): i is Item => !!i).slice(0, 5), [recent, pool]);
+  const family = useMemo(() => (scope.type === 'folder' ? familyOf(scope.id, lib.folders) : null), [scope, lib.folders]);
 
   const inScope = (i: Item) => {
     switch (scope.type) {
@@ -117,16 +136,25 @@ export function App() {
       case 'none': return !i.folderId || !folderMap.has(i.folderId);
       case 'highlights': return !!i.highlights?.length;
       case 'broken': return !!i.brokenAt;
-      case 'folder': return i.folderId === scope.id;
+      case 'folder': return !!i.folderId && !!family?.has(i.folderId);
+      case 'done': return true;
+      case 'memos': return i.kind === 'memo';
       case 'tag': return i.tags.includes(scope.tag);
     }
   };
   const query = q.trim().toLowerCase();
-  const list = lib.items.filter(i => inScope(i) && (!query || [i.title, i.note, i.url, domainOf(i.url), i.tags.join(' '), ...(i.highlights ?? [])].join(' ').toLowerCase().includes(query)));
-  const scopeTitle = {all: '전체', star: '즐겨찾기', none: '미분류', highlights: '하이라이트', broken: '열리지 않는 링크'} as Record<string, string>;
+  // 본문 검색: 기기에 저장한 리더 본문까지 찾는다 (검색할 때 한 번 읽어 둔다)
+  const [bodies, setBodies] = useState<Map<string, string>>(new Map());
+  const searching = query.length > 0;
+  useEffect(() => { if (searching) void allArticleTexts().then(setBodies, () => {}); }, [searching]);
+  const matches = (i: Item) => [i.title, i.note, i.url, domainOf(i.url), i.siteName ?? '', i.tags.join(' '), ...(i.highlights ?? [])].join(' ').toLowerCase().includes(query)
+    || !!bodies.get(i.id)?.includes(query);
+  const list = (scope.type === 'done' ? doneItems : scope.type === 'highlights' ? highlighted : active).filter(i => inScope(i) && (!query || matches(i)));
+  const scopeTitle = {all: '전체', star: '즐겨찾기', none: '미분류', highlights: '하이라이트', broken: '열리지 않는 링크', done: '완료함', memos: '메모'} as Record<string, string>;
   const title = selection ? (selection.size ? `${selection.size}개 선택` : '항목 고르기')
     : scope.type === 'tag' ? `#${scope.tag}` : scope.type === 'folder' ? folderMap.get(scope.id)?.name ?? '서랍' : scopeTitle[scope.type];
-  const showFolder = scope.type !== 'folder';
+  // 상위 서랍을 볼 땐 어느 하위 서랍 것인지 칩으로 보여준다
+  const showFolder = scope.type !== 'folder' || (family?.size ?? 0) > 1;
 
   /** 잠깐 보이고 사라지는 알림 */
   const notify = useCallback((body: string, type: 'info' | 'error' = 'info') =>
@@ -151,7 +179,7 @@ export function App() {
 
   const defaultFolderId = scope.type === 'folder' ? scope.id
     : defaultFolderPref === 'none' ? null
-    : folderMap.has(defaultFolderPref) ? defaultFolderPref : lib.folders[0]?.id ?? null;
+    : folderMap.has(defaultFolderPref) ? defaultFolderPref : pickFolders[0]?.id ?? null;
 
   /** 새 글은 본문을 미리 받아 둔다 (설정에서 끌 수 있다) */
   const prefetch = (id: string, url?: string) => {
@@ -196,6 +224,9 @@ export function App() {
       if (info?.title && !now.title) patch.title = info.title;
       if (info?.description && !now.note) patch.note = info.description;
       if (info?.image && !now.image) patch.image = info.image;
+      if (info?.video && !now.video) patch.video = info.video;
+      if (info?.avatar && !now.avatar) patch.avatar = info.avatar;
+      if (info?.images && !now.images) patch.images = info.images;
       if (info?.siteName && !now.siteName) patch.siteName = info.siteName;
       if (!info && !now.title && !now.note) patch.title = guessTitle(u);
       if (Object.keys(patch).length) animate(() => lib.updateItem(id, patch));
@@ -228,6 +259,17 @@ export function App() {
       undoable(`‘${nameOf(i)}’ 삭제함`, () => animate(() => lib.restoreItem(i.id)));
     },
     startSelect: i => { haptic(); setSelection(new Set([i.id])); },
+    toggleDone: i => {
+      haptic();
+      const doneAt = i.doneAt ? null : Date.now();
+      animate(() => lib.updateItem(i.id, {doneAt}));
+      undoable(doneAt ? `‘${nameOf(i)}’ 확인 완료` : `‘${nameOf(i)}’ 완료 취소`, () => animate(() => lib.updateItem(i.id, {doneAt: i.doneAt ?? null})));
+    },
+    toggleNsfw: i => {
+      const on = !isNsfw(i);
+      animate(() => lib.updateItem(i.id, {tags: withNsfw(i.tags, on)}));
+      notify(on ? (showNsfw ? 'NSFW 로 표시했어요' : 'NSFW 로 표시해서 숨겼어요') : 'NSFW 표시를 뺐어요');
+    },
     selection,
     toggleSelect: i => setSelection(prev => {
       if (!prev) return prev;
@@ -413,12 +455,14 @@ export function App() {
           ? <EmptyState title="하이라이트가 없어요" description="리더 모드에서 문단을 눌러 형광펜을 칠해보세요." icon={<Highlighter size={28} />} />
           : scope.type === 'broken'
             ? <EmptyState title="모두 잘 열려요" description="아이폰 앱이 링크를 점검해서, 열리지 않는 링크가 생기면 여기에 모여요." icon={<Link2Off size={28} />} />
+            : scope.type === 'done'
+              ? <EmptyState title="완료한 항목이 없어요" description="항목을 길게 눌러 ‘확인 완료’ 하면 목록에서 빠지고 여기로 와요." icon={<CheckCheck size={28} />} />
             : <EmptyState title={lib.items.length ? '이 서랍은 비어 있어요' : '서랍이 비어 있어요'} description="아래 + 버튼으로 링크나 메모를 넣어보세요." icon={<Tray size={28} />} actions={<Button label="추가" variant="primary" onClick={openAdd} />} />;
   } else if (scope.type === 'highlights') {
     body = <HighlightList items={list} folderMap={folderMap} onOpen={i => act.openReader(i)} onRemove={(i, h) => lib.toggleHighlight(i.id, h)} />;
   } else {
     body = view === 'list'
-      ? <DayList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} />
+      ? <TimelineList items={list} folderMap={folderMap} showFolder={showFolder} act={act} loadingIds={loadingIds} groupBy={scope.type === 'done' ? 'none' : groupBy} />
       : <CardGrid items={list} folderMap={folderMap} showFolder={showFolder} act={act} />;
   }
 
@@ -436,19 +480,24 @@ export function App() {
           ? <button className="text-btn" onClick={() => setSelection(allPicked ? new Set() : new Set(allIds))}>{allPicked ? '선택 해제' : '모두 선택'}</button>
           : <>
             <button className="bar-btn" aria-label="여러 개 고르기" disabled={!list.length || scope.type === 'highlights'} onClick={() => setSelection(new Set())}><CircleCheck strokeWidth={1.8} /></button>
-            <div className="view-switch">
-              <SegmentedControl label="보기 방식" value={view} onChange={v => changeView(v as 'list' | 'card')} size="sm">
-                <SegmentedControlItem value="list" label="목록" isLabelHidden icon={<Rows3 size={17} strokeWidth={2} />} />
-                <SegmentedControlItem value="card" label="카드" isLabelHidden icon={<LayoutGrid size={17} strokeWidth={2} />} />
-              </SegmentedControl>
-            </div>
           </>}
       </header>
 
-      <main className="content" ref={scrollRef} onScroll={e => { const s = e.currentTarget.scrollTop > 2; if (s !== scrolled) setScrolled(s); }}>
+      <main className="content" ref={scrollRef} onScroll={e => {
+        const top = e.currentTarget.scrollTop;
+        const s = top > 2;
+        if (s !== scrolled) setScrolled(s);
+        // 아래로 내리면 하단바가 + 버튼으로 합쳐지고, 위로 올리거나 맨 위면 다시 펼쳐진다
+        const d = top - lastTop.current;
+        if (Math.abs(d) > 6) {
+          const c = d > 0 && top > 48;
+          if (c !== collapsed) setCollapsed(c);
+          lastTop.current = top;
+        }
+      }}>
         <div className="content-inner">
           <div className="search-bar">
-            <TextInput label="검색" isLabelHidden placeholder="제목, 메모, 태그, 주소" type="search" value={q} onChange={setQ} startIcon={Search} size="lg" />
+            <TextInput label="검색" isLabelHidden placeholder="제목, 메모, 태그, 주소, 본문" type="search" value={q} onChange={setQ} startIcon={Search} size="lg" />
           </div>
           {body}
         </div>
@@ -469,7 +518,7 @@ export function App() {
           )}
           <div className="select-bar" aria-label="고른 항목에 할 일">
             <DropdownMenu placement="above" presentation="adaptive" items={[
-              ...lib.folders.map(f => ({label: f.name, icon: <span className="dot" style={cssVar(COLORS[f.color])} />, onClick: () => bulk(`${selection.size}개를 ‘${f.name}’ 로 옮겼어요`, () => ({folderId: f.id}))})),
+              ...pickFolders.map(f => ({label: f.name, icon: <span className="dot" style={cssVar(COLORS[f.color])} />, onClick: () => bulk(`${selection.size}개를 ‘${f.name}’ 로 옮겼어요`, () => ({folderId: f.id}))})),
               {label: '미분류', onClick: () => bulk(`${selection.size}개를 미분류로 옮겼어요`, () => ({folderId: null}))},
             ]} renderTrigger={props => <button type="button" disabled={!selection.size} {...props}><FolderIcon size={19} /><span>옮기기</span></button>} />
             <button type="button" disabled={!selection.size} onClick={() => setTagging(t => !t)}><Tag size={19} /><span>태그</span></button>
@@ -477,25 +526,41 @@ export function App() {
               const all = [...selection].every(id => lib.items.find(i => i.id === id)?.starred);
               bulk(all ? '즐겨찾기에서 뺐어요' : '즐겨찾기에 넣었어요', () => ({starred: !all}));
             }}><Star size={19} /><span>즐겨찾기</span></button>
+            <button type="button" disabled={!selection.size} onClick={() => {
+              const undo = scope.type === 'done';
+              bulk(undo ? `${selection.size}개 완료 취소` : `${selection.size}개 확인 완료`, () => ({doneAt: undo ? null : Date.now()}));
+            }}><CheckCheck size={19} /><span>{scope.type === 'done' ? '완료 취소' : '완료'}</span></button>
             <button type="button" className="danger" disabled={!selection.size} onClick={() => bulk(`${selection.size}개 삭제함`, () => ({deletedAt: Date.now()}))}><Trash2 size={19} /><span>삭제</span></button>
           </div>
         </div>
       ) : (
-        <div className="fab-dock"><PullFab onTap={openAdd} onPull={quickAdd} /></div>
+        <div className="fab-dock" data-collapsed={collapsed || undefined}>
+          <nav className="dockbar" aria-label="화면" inert={collapsed || undefined}>
+            <button type="button" aria-pressed={view === 'list'} onClick={() => { if (view === 'list') toTop(); else changeView('list'); }}><MessageSquareText size={22} strokeWidth={2} /><span>타임라인</span></button>
+            <button type="button" aria-pressed={view === 'card'} onClick={() => { if (view === 'card') toTop(); else changeView('card'); }}><LayoutGrid size={22} strokeWidth={2} /><span>미디어</span></button>
+            <button type="button" onClick={() => setSheet('settings')}><Settings size={22} strokeWidth={2} /><span>설정</span></button>
+          </nav>
+          <PullFab onTap={openAdd} onPull={quickAdd} />
+        </div>
       )}
 
       <MobileNav isOpen={navOpen} onOpenChange={setNavOpen} label="서랍" side="start" header={
         <div className="nav-head">
           <span>hikidashi</span>
-          <button type="button" className="nav-gear" aria-label="설정" onClick={() => { setNavOpen(false); setSheet('settings'); }}><Settings size={19} strokeWidth={2} /></button>
+          <button type="button" className="nav-gear" aria-pressed={showNsfw} aria-label={showNsfw ? 'NSFW 숨기기' : 'NSFW 보이기'} title={showNsfw ? 'NSFW 보이는 중' : 'NSFW 숨기는 중'}
+            data-on={showNsfw || undefined} onClick={() => { setShowNsfw(!showNsfw); notify(showNsfw ? 'NSFW 항목을 숨겼어요' : 'NSFW 항목을 보여줘요'); }}>
+            {showNsfw ? <Eye size={19} strokeWidth={2} /> : <EyeOff size={19} strokeWidth={2} />}
+          </button>
         </div>
       }>
         <SideNavSection title="보관함">
-          <SideNavItem label="전체" icon={Inbox} isSelected={scope.type === 'all'} onClick={() => pick({type: 'all'})} endContent={count(lib.items.length)} />
-          <SideNavItem label="즐겨찾기" icon={Star} isSelected={scope.type === 'star'} onClick={() => pick({type: 'star'})} endContent={count(lib.items.filter(i => i.starred).length)} />
+          <SideNavItem label="전체" icon={Inbox} isSelected={scope.type === 'all'} onClick={() => pick({type: 'all'})} endContent={count(active.length)} />
+          {active.some(i => i.kind === 'memo') && <SideNavItem label="메모" icon={StickyNote} isSelected={scope.type === 'memos'} onClick={() => pick({type: 'memos'})} endContent={count(active.filter(i => i.kind === 'memo').length)} />}
+          <SideNavItem label="즐겨찾기" icon={Star} isSelected={scope.type === 'star'} onClick={() => pick({type: 'star'})} endContent={count(active.filter(i => i.starred).length)} />
           {unfiled > 0 && <SideNavItem label="미분류" icon={Tray} isSelected={scope.type === 'none'} onClick={() => pick({type: 'none'})} endContent={count(unfiled)} />}
           {highlighted.length > 0 && <SideNavItem label="하이라이트" icon={Highlighter} isSelected={scope.type === 'highlights'} onClick={() => pick({type: 'highlights'})} endContent={count(highlighted.length)} />}
           {broken.length > 0 && <SideNavItem label="열리지 않는 링크" icon={Link2Off} isSelected={scope.type === 'broken'} onClick={() => pick({type: 'broken'})} endContent={count(broken.length)} />}
+          {doneItems.length > 0 && <SideNavItem label="완료함" icon={CheckCheck} isSelected={scope.type === 'done'} onClick={() => pick({type: 'done'})} endContent={count(doneItems.length)} />}
         </SideNavSection>
         {recentItems.length > 0 && (
           <SideNavSection title="최근 연 항목">
@@ -506,8 +571,9 @@ export function App() {
           </SideNavSection>
         )}
         <SideNavSection title="서랍">
-          {lib.folders.map(f => (
-            <SideNavItem key={f.id} label={f.name} icon={dotIcon(COLORS[f.color])} isSelected={scope.type === 'folder' && scope.id === f.id}
+          {orderedFolders(lib.folders).map(({folder: f, depth}) => (
+            <SideNavItem key={f.id} label={f.name} icon={depth ? subDotIcon(COLORS[folderMap.get(f.id)!.color]) : dotIcon(COLORS[f.color])}
+              className={depth ? 'nav-sub' : undefined} isSelected={scope.type === 'folder' && scope.id === f.id}
               onClick={() => pick({type: 'folder', id: f.id})} endContent={count(counts.get(f.id) ?? 0)} />
           ))}
           <SideNavItem label="서랍 편집" icon={SlidersHorizontal} onClick={() => { setNavOpen(false); setSheet('folders'); }} />
@@ -522,7 +588,7 @@ export function App() {
       </MobileNav>
 
       <ItemSheet isOpen={sheet === 'item'} onClose={() => { setSheet(null); setEditing(null); setPrefill(undefined); }}
-        editing={editing} prefill={prefill} folders={lib.folders} defaultFolderId={defaultFolderId} allTags={allTags} onSave={save} />
+        editing={editing} prefill={prefill} folders={pickFolders} defaultFolderId={defaultFolderId} allTags={allTags} onSave={save} />
       <MemoSheet item={memoLive} folder={memoLive?.folderId ? folderMap.get(memoLive.folderId) : undefined} onClose={() => setMemo(null)} onEdit={act.edit} onRemove={act.remove} onStar={act.toggleStar}
         saved={u => lib.items.find(i => i.url === u)}
         onOpenLink={u => {
@@ -532,17 +598,17 @@ export function App() {
         }}
         onSaveLink={(u, info, folderId) => {
           const id = uid();
-          lib.addItem({kind: 'link', url: u, title: info?.title ?? '', note: info?.description ?? '', image: info?.image, siteName: info?.siteName, folderId, tags: []}, id);
+          lib.addItem({kind: 'link', url: u, title: info?.title ?? '', note: info?.description ?? '', image: info?.image, video: info?.video, avatar: info?.avatar, images: info?.images, siteName: info?.siteName, folderId, tags: []}, id);
           prefetch(id, u);
           notify('링크를 저장했어요');
         }} />
       <ReaderSheet item={readerLive} onClose={() => setReader(null)} notify={notify}
         onHighlight={(i, text) => lib.toggleHighlight(i.id, text)} />
       <FoldersSheet isOpen={sheet === 'folders'} onClose={() => setSheet(null)} folders={lib.folders} counts={counts}
-        onAdd={(n, c) => { lib.addFolder(n, c); notify(`‘${n}’ 서랍을 만들었어요`); }}
+        onAdd={(n, c, parentId) => { lib.addFolder(n, c, parentId); notify(`‘${n}’ 서랍을 만들었어요`); }}
         onUpdate={(id, p) => lib.updateFolder(id, p)} onRemove={removeFolder} onReorder={lib.reorderFolders} />
       <SettingsSheet isOpen={sheet === 'settings'} onClose={() => setSheet(null)} records={lib.allRecords} liveCount={lib.items.length}
-        onImport={lib.importBackup} notify={notify} folders={lib.folders} tags={tags}
+        onImport={lib.importBackup} notify={notify} folders={pickFolders} tags={tags}
         onRenameTag={(from, to) => { const prev = lib.renameTag(from, to); if (prev.length) undoable(`#${from} → #${to.replace(/^#+/, '').trim()}`, () => lib.restoreVersions(prev)); }}
         onRemoveTag={t => { const prev = lib.removeTag(t); if (prev.length) undoable(`#${t} 태그를 항목 ${prev.length}개에서 뺐어요`, () => lib.restoreVersions(prev)); }}
         onEditFolders={() => { setSheet(null); afterSheet(() => setSheet('folders')); }}

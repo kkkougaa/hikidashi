@@ -396,3 +396,68 @@ final class SyncVaultTests: XCTestCase {
     }
     #endif
 }
+
+final class VideoTests: XCTestCase {
+    func testDirectMediaAndTweetVideo() throws {
+        XCTAssertEqual(directMedia("https://cdn.example.com/a/cat.mp4?x=1")?.video, "https://cdn.example.com/a/cat.mp4?x=1")
+        XCTAssertEqual(directMedia("https://www.example.com/a/b.GIF")?.image, "https://www.example.com/a/b.GIF")
+        XCTAssertEqual(directMedia("https://www.example.com/a/b.GIF")?.siteName, "example.com")
+        XCTAssertNil(directMedia("https://example.com/post/1"))
+        XCTAssertNil(directMedia("https://example.com"))
+
+        let json = #"{"text":"영상","author":{"screen_name":"a"},"media":{"videos":[{"url":"https://video.twimg.com/v.mp4","thumbnail_url":"https://pbs.twimg.com/t.jpg","type":"gif"}]}}"#
+        let info = parseFxTweet(try JSONDecoder().decode(FxTweet.self, from: Data(json.utf8)))
+        XCTAssertEqual(info.video, "https://video.twimg.com/v.mp4")
+        XCTAssertEqual(info.image, "https://pbs.twimg.com/t.jpg")
+    }
+
+    func testVideoSurvivesBackupRoundTrip() throws {
+        var item = Item(id: "v", kind: .link, url: "https://x.com/a/status/1", createdAt: 1, updatedAt: 2)
+        item.video = "https://video.twimg.com/v.mp4"
+        let data = try Backup(folders: [], items: [item]).encoded()
+        XCTAssertEqual(try parseBackup(data).items.first?.video, "https://video.twimg.com/v.mp4")
+    }
+}
+
+final class FolderFamilyTests: XCTestCase {
+    func testSubfoldersDoneAndNsfw() throws {
+        var lib = Library(folders: [], items: [])
+        let a = lib.addFolder(name: "참고", color: .cyan, now: 1)
+        let b = lib.addFolder(name: "아이디어", color: .orange, now: 1)
+        let a1 = lib.addFolder(name: "디자인", color: .red, parentId: a.id, now: 2)
+        let a2 = lib.addFolder(name: "개발", color: .red, parentId: a.id, now: 3)
+        // 하위의 하위는 안 된다: 하위 서랍을 상위로 주면 맨 위로
+        let x = lib.addFolder(name: "x", color: .gray, parentId: a1.id, now: 4)
+        XCTAssertNil(lib.folder(x.id)?.parentId)
+        XCTAssertEqual(lib.orderedFolders.map { "\($0.depth):\($0.folder.name)" }, ["0:참고", "1:디자인", "1:개발", "0:아이디어", "0:x"])
+        XCTAssertEqual(lib.displayName(lib.folder(a1.id)!), "참고-디자인")
+        XCTAssertEqual(lib.displayColor(lib.folder(a2.id)!), .cyan)
+        XCTAssertEqual(lib.family(a.id), [a.id, a1.id, a2.id])
+        XCTAssertEqual(lib.family(b.id), [b.id])
+
+        let it = lib.addItem(ItemDraft(kind: .memo, title: "m", folderId: a1.id), now: 5)
+        let moved = lib.removeFolder(a.id, now: 6)
+        XCTAssertNil(lib.folder(a1.id))
+        XCTAssertNil(lib.item(it.id)?.folderId)
+        lib.restoreFolder(a.id, moved: moved, now: 7)
+        XCTAssertNotNil(lib.folder(a1.id))
+        XCTAssertEqual(lib.item(it.id)?.folderId, a1.id)
+
+        // 확인 완료·하위 서랍은 백업(=동기화) 왕복에도 남는다
+        lib.update(it.id, now: 8) { $0.doneAt = 8 }
+        let back = try parseBackup(lib.backup().encoded())
+        XCTAssertEqual(back.items.first?.doneAt, 8)
+        XCTAssertEqual(back.folders.first { $0.id == a1.id }?.parentId, a.id)
+
+        XCTAssertEqual(Library.withNsfw(["a"], true), ["a", "nsfw"])
+        XCTAssertEqual(Library.withNsfw(["a", "NSFW"], false), ["a"])
+        XCTAssertTrue(Library.isNsfw(Item(kind: .memo, tags: ["Nsfw"])))
+    }
+
+    func testReadsWebSubfolder() throws {
+        let web = #"{"app":"hikidashi","version":1,"exportedAt":0,"folders":[{"id":"p","name":"P","color":"blue","order":0,"createdAt":1,"updatedAt":1,"deletedAt":null},{"id":"c","name":"C","color":"blue","order":0,"parentId":"p","createdAt":1,"updatedAt":1,"deletedAt":null}],"items":[{"id":"i","kind":"memo","title":"","note":"n","folderId":"c","tags":[],"starred":false,"createdAt":1,"updatedAt":1,"deletedAt":null,"doneAt":5}]}"#
+        let b = try parseBackup(Data(web.utf8))
+        XCTAssertEqual(b.folders.last?.parentId, "p")
+        XCTAssertEqual(b.items.first?.doneAt, 5)
+    }
+}

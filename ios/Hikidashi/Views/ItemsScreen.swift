@@ -10,9 +10,11 @@ struct ItemsScreen: View {
     @State private var tagging = false
     @State private var tagText = ""
     @AppStorage("viewMode") private var viewMode = "list"
+    @AppStorage("groupBy") private var groupBy = "day"
 
     private var showFolder: Bool {
-        if case .folder = scope { return false }
+        // 상위 서랍을 볼 땐 어느 하위 서랍 것인지 칩으로 보여준다
+        if case .folder(let id) = scope { return store.library.family(id).count > 1 }
         return true
     }
 
@@ -30,7 +32,10 @@ struct ItemsScreen: View {
             }
         }
         .navigationTitle(store.selection.map { $0.isEmpty ? "항목 고르기" : "\($0.count)개 선택" } ?? store.title(of: scope))
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "제목, 메모, 태그, 주소")
+        // 큰 제목을 버튼 줄과 같은 높이에 둬서 제목 위아래 빈 공간을 맞춘다
+        .toolbarTitleDisplayMode(.inlineLarge)
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "제목, 메모, 태그, 주소, 본문")
+        .onChange(of: query) { _, q in if q.isEmpty { store.forgetArticleTexts() } }
         .toolbar {
             if let sel = store.selection {
                 ToolbarItem(placement: .topBarLeading) {
@@ -47,17 +52,13 @@ struct ItemsScreen: View {
                     Button(action: onMenu) { Image(systemName: "sidebar.left") }
                         .accessibilityLabel("서랍 열기")
                 }
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                // 두 버튼을 한 묶음에 넣으면 iOS 26 의 유리 배경 안에서 세그먼트가 겹쳐 보여서 따로 둔다
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { store.startSelecting() } label: { Image(systemName: "checkmark.circle") }
                         .accessibilityLabel("여러 개 고르기")
                         .disabled(items.isEmpty)
-                    Picker("보기 방식", selection: $viewMode.animation(.snappy)) {
-                        Image(systemName: "list.bullet").accessibilityLabel("목록").tag("list")
-                        Image(systemName: "square.grid.2x2").accessibilityLabel("카드").tag("grid")
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 100)
                 }
+
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -77,13 +78,14 @@ struct ItemsScreen: View {
         let none = sel.isEmpty
         return HStack(spacing: 0) {
             Menu {
-                ForEach(store.folders) { f in
+                ForEach(store.pickFolders) { f in
                     Button { store.moveSelected(to: f.id) } label: { Label(f.name, systemImage: "folder.fill") }
                 }
                 Button { store.moveSelected(to: nil) } label: { Label("미분류", systemImage: "archivebox") }
             } label: { barLabel("옮기기", "folder") }
             Button { tagging = true } label: { barLabel("태그", "number") }
             Button { store.starSelected() } label: { barLabel("즐겨찾기", "star") }
+            Button { store.doneSelected(undo: scope == .done) } label: { barLabel(scope == .done ? "완료 취소" : "완료", "checkmark.circle") }
             Button(role: .destructive) { store.removeSelected() } label: { barLabel("삭제", "trash").foregroundStyle(none ? Color.secondary : Color.red) }
         }
         .disabled(none)
@@ -108,6 +110,8 @@ struct ItemsScreen: View {
             ContentUnavailableView("하이라이트가 없어요", systemImage: "highlighter", description: Text("리더 모드에서 문단을 길게 눌러 형광펜을 칠해보세요."))
         } else if scope == .broken {
             ContentUnavailableView("모두 잘 열려요", systemImage: "checkmark.seal", description: Text("열리지 않는 링크가 생기면 여기에 모여요."))
+        } else if scope == .done {
+            ContentUnavailableView("완료한 항목이 없어요", systemImage: "checkmark.circle", description: Text("항목을 길게 눌러 ‘확인 완료’ 하면 목록에서 빠지고 여기로 와요."))
         } else if scope == .starred {
             ContentUnavailableView("즐겨찾기가 없어요", systemImage: "star", description: Text("항목을 오른쪽으로 밀어 즐겨찾기에 넣으세요."))
         } else {
@@ -115,9 +119,24 @@ struct ItemsScreen: View {
         }
     }
 
-    private func sections(_ items: [Item]) -> [(Bucket, [Item])] {
+    /// 목록 묶음: 날짜별(오늘·어제…) 또는 사이트별(많은 사이트부터, 메모는 맨 뒤)
+    private func sections(_ items: [Item]) -> [(String, [Item])] {
+        if groupBy == "site" && scope != .done {
+            let groups = Dictionary(grouping: items) { $0.kind == .memo ? "" : siteKey($0) }
+            return groups.sorted { a, b in
+                if a.key.isEmpty != b.key.isEmpty { return b.key.isEmpty }
+                return a.value.count != b.value.count ? a.value.count > b.value.count : a.key.localizedStandardCompare(b.key) == .orderedAscending
+            }.map { ($0.key.isEmpty ? "메모" : $0.key, $0.value) }
+        }
         let groups = Dictionary(grouping: items) { store.dates.bucket($0.createdAt) }
-        return Bucket.allCases.compactMap { b in groups[b].map { (b, $0) } }
+        return Bucket.allCases.compactMap { b in groups[b].map { (b.rawValue, $0) } }
+    }
+
+    /// 사이트 이름: 출처 칩과 같게 (X 는 계정과 상관없이 X 하나로)
+    private func siteKey(_ i: Item) -> String {
+        if let s = i.siteName, !s.isEmpty { return s.hasPrefix("X · ") ? "X" : s }
+        let d = domain(of: i.url)
+        return d.isEmpty ? "알 수 없음" : d
     }
 
     private func list(_ items: [Item]) -> some View {
@@ -125,12 +144,12 @@ struct ItemsScreen: View {
             ForEach(sections(items), id: \.0) { bucket, group in
                 Section {
                     ForEach(group) { item in
-                        ItemRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id), selected: store.selection.map { $0.contains(item.id) })
+                        TimelineRow(item: item, folder: store.folder(item.folderId), showFolder: showFolder, loading: store.loadingIDs.contains(item.id), selected: store.selection.map { $0.contains(item.id) })
                             .itemActions(item, store: store)
                     }
                 } header: {
                     HStack {
-                        Text(bucket.rawValue).font(.subheadline.weight(.bold)).foregroundStyle(.primary)
+                        Text(bucket).font(.subheadline.weight(.bold)).foregroundStyle(.primary)
                         Spacer()
                         Text("\(group.count)개").font(.footnote).foregroundStyle(.secondary)
                     }
@@ -141,6 +160,7 @@ struct ItemsScreen: View {
             Color.clear.frame(height: 72).listRowSeparator(.hidden)
         }
         .listStyle(.plain)
+        .modifier(CollapseOnScroll())
     }
 
     /// 두 줄 벽돌 쌓기: 그림이 있는 카드는 그림 비율대로 길어지고, 짧은 쪽 줄에 다음 카드를 놓는다
@@ -168,6 +188,7 @@ struct ItemsScreen: View {
             .padding(.top, 4)
             .padding(.bottom, 110)
         }
+        .modifier(CollapseOnScroll())
     }
 }
 
@@ -214,14 +235,26 @@ struct ItemCard: View {
     @State private var coverFailed = false
 
     var body: some View {
+        let clip = item.coverVideo
         let cover = coverFailed ? nil : item.coverImage
         VStack(alignment: .leading, spacing: 0) {
-            if let cover {
+            if let clip {
+                // 영상은 2초만 소리 없이 반복 (그림이 있으면 받는 동안 그림을 먼저)
+                Group {
+                    if let cover {
+                        RemoteImage(url: cover, onFail: { coverFailed = true }).overlay { LoopingClip(url: clip) }
+                    } else {
+                        Color(.tertiarySystemFill).aspectRatio(16 / 9, contentMode: .fit).overlay { LoopingClip(url: clip) }
+                    }
+                }
+                .clipped()
+                .overlay(alignment: .topTrailing) { if item.starred { starBadge.padding(8) } }
+            } else if let cover {
                 RemoteImage(url: cover, onFail: { coverFailed = true })
                     .overlay(alignment: .topTrailing) { if item.starred { starBadge.padding(8) } }
             }
             VStack(alignment: .leading, spacing: 6) {
-                if cover == nil {
+                if cover == nil && clip == nil {
                     HStack(alignment: .top) {
                         ItemIcon(item: item, folder: folder, size: 40)
                         Spacer()
@@ -263,6 +296,12 @@ struct ItemCard: View {
 }
 
 extension Item {
+    /// 카드에서 반복 재생할 영상
+    var coverVideo: String? {
+        guard kind == .link, emoji == nil, let video, !video.isEmpty else { return nil }
+        return video
+    }
+
     /// 카드에 크게 보여줄 그림 (프로필 사진처럼 작은 대체 그림은 빼고)
     var coverImage: String? {
         guard kind == .link, let image, !image.isEmpty else { return nil }
@@ -300,6 +339,9 @@ private struct ItemActions: ViewModifier {
             .contextMenu {
                 Button { store.toggleStar(item) } label: { Label(item.starred ? "즐겨찾기 해제" : "즐겨찾기", systemImage: item.starred ? "star.slash" : "star") }
                 Button { store.editor = EditorRequest(editing: item) } label: { Label("편집", systemImage: "pencil") }
+                Button { store.toggleDone(item) } label: {
+                    Label(item.doneAt == nil ? "확인 완료" : "완료 취소", systemImage: item.doneAt == nil ? "checkmark.circle" : "arrow.uturn.backward")
+                }
                 Button { store.startSelecting(item) } label: { Label("여러 개 고르기", systemImage: "checkmark.circle") }
                 if item.kind == .link {
                     if supportsReader(item.url) {
@@ -308,6 +350,9 @@ private struct ItemActions: ViewModifier {
                     Button { store.openInSafari(item) } label: { Label("사파리로 열기", systemImage: "safari") }
                     Button { store.copyURL(item) } label: { Label("주소 복사", systemImage: "doc.on.doc") }
                     if let s = item.url, let url = URL(string: s) { ShareLink(item: url) { Label("공유", systemImage: "square.and.arrow.up") } }
+                }
+                Button { store.toggleNsfw(item) } label: {
+                    Label(Library.isNsfw(item) ? "NSFW 표시 빼기" : "NSFW 로 표시", systemImage: "eye.slash")
                 }
                 Divider()
                 Button(role: .destructive) { store.remove(item) } label: { Label("삭제", systemImage: "trash") }

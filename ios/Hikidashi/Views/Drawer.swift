@@ -17,27 +17,34 @@ struct DrawerView: View {
                 HStack {
                     Text("hikidashi").font(.title2.weight(.bold))
                     Spacer()
-                    Button(action: onSettings) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                    // NSFW 태그 항목 보이기·숨기기 (이 기기만)
+                    Button { withAnimation(.snappy) { store.toggleShowNsfw() } } label: {
+                        Image(systemName: store.showNsfw ? "eye.fill" : "eye.slash.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(store.showNsfw ? Color.brand : .secondary)
                             .frame(width: 40, height: 40)
                             .background(Color(.tertiarySystemFill), in: .circle)
+                            .contentTransition(.symbolEffect(.replace))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("설정")
+                    .accessibilityLabel(store.showNsfw ? "NSFW 숨기기" : "NSFW 보이기")
+                    // 설정은 하단바로 옮겼다
                 }
                 .padding(.leading, 12).padding(.trailing, 4)
                 .padding(.bottom, 14)
 
-                row(.all, "전체", icon: "tray.fill", color: .brand, count: store.allItems.count)
-                row(.starred, "즐겨찾기", icon: "star.fill", color: FolderColor.mustard.color, count: store.allItems.filter(\.starred).count)
-                let unfiled = store.library.unfiled.count
+                row(.all, "전체", icon: "tray.fill", color: .brand, count: store.activeItems.count)
+                let memos = store.items(in: .memos).count
+                if memos > 0 { row(.memos, "메모", icon: "note.text", color: FolderColor.teal.color, count: memos) }
+                row(.starred, "즐겨찾기", icon: "star.fill", color: FolderColor.mustard.color, count: store.activeItems.filter(\.starred).count)
+                let unfiled = store.items(in: .unfiled).count
                 if unfiled > 0 { row(.unfiled, "미분류", icon: "archivebox.fill", color: unfiledColor, count: unfiled) }
-                let marked = store.library.highlighted.count
+                let marked = store.items(in: .highlights).count
                 if marked > 0 { row(.highlights, "하이라이트", icon: "highlighter", color: Color(hex: "#C99700"), count: marked) }
-                let broken = store.library.broken.count
+                let broken = store.items(in: .broken).count
                 if broken > 0 { row(.broken, "열리지 않는 링크", icon: "link", color: .red, count: broken) }
+                let done = store.items(in: .done).count
+                if done > 0 { row(.done, "완료함", icon: "checkmark.circle.fill", color: .green, count: done) }
 
                 // 최근 연 항목
                 let recent = Array(store.recentItems.prefix(5))
@@ -63,8 +70,10 @@ struct DrawerView: View {
                     }
                     .accessibilityLabel("새 서랍")
                 }
-                ForEach(store.folders) { f in
-                    row(.folder(f.id), f.name, icon: "folder.fill", color: f.color.color, count: store.library.count(inFolder: f.id))
+                ForEach(store.library.orderedFolders, id: \.folder.id) { entry in
+                    let f = entry.folder
+                    row(.folder(f.id), f.name, icon: entry.depth > 0 ? "folder" : "folder.fill",
+                        color: store.library.displayColor(f).color, count: store.count(inFolder: f.id), indent: entry.depth > 0)
                         .contextMenu {
                             Button { editing = FolderEdit(folder: f) } label: { Label("편집", systemImage: "pencil") }
                             Button(role: .destructive) {
@@ -74,7 +83,7 @@ struct DrawerView: View {
                         }
                 }
 
-                let tags = store.library.tagCounts
+                let tags = store.showNsfw ? store.library.tagCounts : store.library.tagCounts.filter { $0.tag.lowercased() != Library.nsfwTag }
                 if !tags.isEmpty {
                     header("태그") { EmptyView() }
                     ForEach(tags, id: \.tag) { t in
@@ -101,11 +110,16 @@ struct DrawerView: View {
         .frame(minHeight: 32)
     }
 
-    private func row(_ scope: Scope, _ name: String, icon: String, color: Color?, count: Int) -> some View {
+    private func row(_ scope: Scope, _ name: String, icon: String, color: Color?, count: Int, indent: Bool = false) -> some View {
         let on = selected == scope
         return Button { onSelect(scope) } label: {
             HStack(spacing: 12) {
-                if let color {
+                if let color, indent {
+                    // 하위 서랍: 들여 쓰고 작게
+                    Image(systemName: icon).font(.system(size: 11, weight: .bold)).foregroundStyle(color)
+                        .frame(width: 28, height: 28)
+                        .padding(.leading, 18)
+                } else if let color {
                     Image(systemName: icon).font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
                         .frame(width: 28, height: 28).background(color, in: .rect(cornerRadius: 8))
                 } else {
@@ -132,6 +146,7 @@ struct SettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("viewMode") private var viewMode = "list"
+    @AppStorage("groupBy") private var groupBy = "day"
     @AppStorage("linkOpen") private var linkOpen = "reader"
     @AppStorage("saveArticles") private var saveArticles = true
     @State private var cacheSize = 0
@@ -155,8 +170,12 @@ struct SettingsScreen: View {
                         Text("다크").tag("dark")
                     }
                     Picker("기본 보기", selection: $viewMode) {
-                        Text("목록").tag("list")
-                        Text("카드").tag("grid")
+                        Text("타임라인").tag("list")
+                        Text("미디어").tag("grid")
+                    }
+                    Picker("목록 묶음", selection: $groupBy) {
+                        Text("날짜").tag("day")
+                        Text("사이트").tag("site")
                     }
                 }
                 Section {
@@ -189,7 +208,7 @@ struct SettingsScreen: View {
                 Section {
                     Picker("기본 서랍", selection: $defaultFolder) {
                         Text("첫 번째 서랍").tag("")
-                        ForEach(store.folders) { f in Text(f.name).tag(f.id) }
+                        ForEach(store.pickFolders) { f in Text(f.name).tag(f.id) }
                         Text("미분류").tag("none")
                     }
                 } header: { Text("새 항목") } footer: { Text("+ 버튼, 끌어올려 추가, 공유 시트로 넣은 항목이 들어갈 서랍이에요.") }
@@ -332,24 +351,32 @@ struct FolderManager: View {
     var body: some View {
         List {
             Section {
-                ForEach(store.folders) { f in
+                let rows = store.library.orderedFolders
+                ForEach(rows, id: \.folder.id) { entry in
+                    let f = entry.folder
                     Button { editing = FolderEdit(folder: f) } label: {
                         HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 7).fill(f.color.color).frame(width: 26, height: 26)
-                                .overlay(Image(systemName: "folder.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.white))
+                            RoundedRectangle(cornerRadius: 7).fill(store.library.displayColor(f).color).frame(width: 26, height: 26)
+                                .overlay(Image(systemName: entry.depth > 0 ? "folder" : "folder.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.white))
+                                .scaleEffect(entry.depth > 0 ? 0.8 : 1)
                             Text(f.name).foregroundStyle(.primary)
                             Spacer()
-                            Text("\(store.library.count(inFolder: f.id))").foregroundStyle(.secondary).monospacedDigit()
+                            Text("\(store.count(inFolder: f.id))").foregroundStyle(.secondary).monospacedDigit()
                         }
+                        .padding(.leading, entry.depth > 0 ? 24 : 0)
                     }
                 }
                 .onMove { from, to in
-                    var ids = store.folders.map(\.id)
-                    ids.move(fromOffsets: from, toOffset: to)
+                    // 같은 단계 안에서만 순서를 바꾼다 (다른 단계로 끌면 무시)
+                    var list = rows
+                    list.move(fromOffsets: from, toOffset: to)
+                    guard let moved = from.first.map({ rows[$0].folder }) else { return }
+                    let key = moved.parentId.flatMap { store.library.folder($0) }?.id
+                    let ids = list.filter { $0.depth == (key == nil ? 0 : 1) && ($0.depth == 0 || $0.folder.parentId == key) }.map(\.folder.id)
                     store.reorderFolders(ids)
                 }
-                .onDelete { idx in idx.map { store.folders[$0] }.forEach { store.removeFolder($0) } }
-            } footer: { Text("길게 눌러 끌면 순서가 바뀌어요. 지운 서랍의 항목은 미분류로 가요.") }
+                .onDelete { idx in idx.map { rows[$0].folder }.forEach { store.removeFolder($0) } }
+            } footer: { Text("길게 눌러 끌면 같은 단계 안에서 순서가 바뀌어요. 지운 서랍(하위 서랍 포함)의 항목은 미분류로 가요.") }
             Button { editing = FolderEdit(folder: nil) } label: { Label("새 서랍", systemImage: "plus") }
         }
         .navigationTitle("서랍 관리")

@@ -61,6 +61,9 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
   const [title, setTitle] = useState(init.title ?? '');
   const [note, setNote] = useState(init.note ?? '');
   const [image, setImage] = useState(init.image);
+  const [video, setVideo] = useState(init.video);
+  const [avatar, setAvatar] = useState(init.avatar);
+  const [images, setImages] = useState(init.images);
   const [siteName, setSiteName] = useState(init.siteName);
   const [folderId, setFolderId] = useState<string>((editing ? editing.folderId : (prefill?.folderId ?? defaultFolderId)) ?? NONE);
   const [tags, setTags] = useState<string[]>(init.tags ?? []);
@@ -91,6 +94,9 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
     if (info.title && (force || !touched.current.title)) setTitle(info.title);
     if (info.description && (force || !touched.current.note)) setNote(info.description);
     setImage(info.image);
+    setVideo(info.video);
+    setAvatar(info.avatar);
+    setImages(info.images);
     setSiteName(info.siteName);
     setFetchState('done');
   };
@@ -141,10 +147,10 @@ function ItemForm({onClose, editing, prefill, folders, defaultFolderId, allTags,
         return;
       }
       // 내용이 있으면 제목을 지어내지 않고 비워 둔다 (X 게시물 같은 경우)
-      onSave({...base, kind, url: u, title: base.title || (base.note ? '' : guessTitle(u)), image, siteName, emoji});
+      onSave({...base, kind, url: u, title: base.title || (base.note ? '' : guessTitle(u)), image, video, avatar, images, siteName, emoji});
     } else {
       if (!base.note && !base.title) return setErr('메모 내용을 적어주세요');
-      onSave({...base, kind, url: undefined, image: undefined, siteName: undefined, emoji});
+      onSave({...base, kind, url: undefined, image: undefined, video: undefined, avatar: undefined, images: undefined, siteName: undefined, emoji});
     }
   };
 

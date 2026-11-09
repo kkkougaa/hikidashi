@@ -6,7 +6,25 @@ export interface PageInfo {
   description?: string;
   /** 글을 대표하는 이미지 */
   image?: string;
+  /** 딸린 영상 (X 영상·움짤, 영상 파일 링크) */
+  video?: string;
+  /** 글 쓴 사람 프로필 사진 (SNS) */
+  avatar?: string;
+  /** 게시물 사진 전부 (2장 이상일 때만) */
+  images?: string[];
   siteName?: string;
+}
+
+/** 주소가 영상·움짤·그림 파일 자체면 바로 쓴다 (페이지를 읽을 필요 없음) */
+export function directMedia(url: string): PageInfo | null {
+  let u: URL;
+  try { u = new URL(url); } catch { return null; }
+  const name = decodeURIComponent(u.pathname.split('/').pop() ?? '');
+  const ext = name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+  const site = u.hostname.replace(/^www\./, '');
+  if (ext && ['mp4', 'm4v', 'webm', 'mov'].includes(ext)) return {title: name, video: url, siteName: site};
+  if (ext && ['gif', 'png', 'jpg', 'jpeg', 'webp', 'avif'].includes(ext)) return {title: name, image: url, siteName: site};
+  return null;
 }
 
 /**
@@ -134,7 +152,7 @@ export function xStatusId(url: string): string | null {
 interface FxTweet {
   text?: string;
   author?: {name?: string; screen_name?: string; avatar_url?: string};
-  media?: {photos?: {url?: string}[]; videos?: {thumbnail_url?: string}[]; all?: {type?: string; url?: string; thumbnail_url?: string}[]};
+  media?: {photos?: {url?: string}[]; videos?: {url?: string; thumbnail_url?: string; type?: string}[]; all?: {type?: string; url?: string; thumbnail_url?: string}[]};
 }
 
 /** FxTwitter 응답을 PageInfo 로 바꾼다 */
@@ -148,12 +166,20 @@ export function parseFxTweet(t: FxTweet): PageInfo {
     || media.all?.find(m => m.thumbnail_url || m.type === 'photo')?.thumbnail_url
     || media.all?.find(m => m.type === 'photo')?.url
     || t.author?.avatar_url?.replace(/_normal\./, '_200x200.');
+  const avatar = t.author?.avatar_url?.replace(/_normal\./, '_200x200.');
+  const photos = (media.photos ?? []).map(p => p.url).filter((u): u is string => !!u);
+  // 영상·움짤(X 는 움짤도 mp4)
+  const video = media.videos?.find(v => v.url)?.url
+    || media.all?.find(m => (m.type === 'video' || m.type === 'gif') && m.url)?.url;
   // 게시물은 제목이 따로 없으니 제목은 비우고 글 전체를 내용으로 쓴다
   const body = text ? clip(text.replace(/\n{3,}/g, '\n\n'), 400) : '';
   return {
     title: body ? undefined : name ? `${name}의 게시물` : undefined,
     description: body || undefined,
     image: image || undefined,
+    video: video || undefined,
+    avatar: avatar || undefined,
+    images: photos.length > 1 ? photos.slice(0, 4) : undefined,
     siteName: handle ? `X · @${handle}` : 'X',
   };
 }
@@ -171,6 +197,8 @@ async function fetchX(id: string, signal?: AbortSignal): Promise<PageInfo | null
 }
 
 export async function fetchPageInfo(url: string, signal?: AbortSignal): Promise<PageInfo | null> {
+  const direct = directMedia(url);
+  if (direct) return direct;
   const xid = xStatusId(url);
   if (xid) {
     const info = await fetchX(xid, signal);

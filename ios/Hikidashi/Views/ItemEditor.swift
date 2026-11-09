@@ -13,6 +13,9 @@ struct ItemEditor: View {
     @State private var title = ""
     @State private var note = ""
     @State private var image: String?
+    @State private var video: String?
+    @State private var avatar: String?
+    @State private var images: [String] = []
     @State private var siteName: String?
     @State private var emoji: String?
     @State private var folderId: String?
@@ -146,7 +149,7 @@ struct ItemEditor: View {
             Text("서랍")
             Spacer()
             Picker("서랍", selection: $folderId) {
-                ForEach(store.folders) { f in
+                ForEach(store.pickFolders) { f in
                     Label { Text(f.name) } icon: { Image(systemName: "folder.fill").foregroundStyle(f.color.color) }.tag(Optional(f.id))
                 }
                 Divider()
@@ -185,6 +188,9 @@ struct ItemEditor: View {
         title = src?.title ?? ""
         note = src?.note ?? ""
         image = src?.image
+        video = editing?.video
+        avatar = editing?.avatar
+        images = editing?.images ?? []
         siteName = src?.siteName
         emoji = src?.emoji
         folderId = editing != nil ? editing?.folderId : (src?.folderId ?? defaultFolderId)
@@ -207,6 +213,9 @@ struct ItemEditor: View {
                 if let t = info.title, force || !touchedTitle { title = t }
                 if let d = info.description, force || !touchedNote { note = d }
                 image = info.image
+                video = info.video
+                avatar = info.avatar
+                images = info.images
                 siteName = info.siteName
             }
         } else {
@@ -228,6 +237,9 @@ struct ItemEditor: View {
             }
             d.url = u
             d.image = image
+            d.video = video
+            d.avatar = avatar
+            d.images = images
             d.siteName = siteName
             // 내용이 있으면 제목을 지어내지 않고 비워 둔다 (X 게시물 같은 경우)
             if d.title.isEmpty, d.note.isEmpty { d.title = guessTitle(u) }

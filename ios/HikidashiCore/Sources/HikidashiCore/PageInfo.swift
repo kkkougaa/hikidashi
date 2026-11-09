@@ -8,14 +8,32 @@ public struct PageInfo: Equatable, Sendable {
     public var title: String?
     public var description: String?
     public var image: String?
+    /// 딸린 영상 (X 영상·움짤, 영상 파일 링크)
+    public var video: String?
+    /// 글 쓴 사람 프로필 사진 (SNS)
+    public var avatar: String?
+    /// 게시물 사진 전부 (2장 이상일 때만)
+    public var images: [String] = []
     public var siteName: String?
 
-    public init(title: String? = nil, description: String? = nil, image: String? = nil, siteName: String? = nil) {
+    public init(title: String? = nil, description: String? = nil, image: String? = nil, video: String? = nil, siteName: String? = nil) {
         self.title = title
         self.description = description
         self.image = image
+        self.video = video
         self.siteName = siteName
     }
+}
+
+/// 주소가 영상·움짤·그림 파일 자체면 바로 쓴다 (웹 directMedia 와 같은 규칙)
+public func directMedia(_ url: String) -> PageInfo? {
+    guard let u = URL(string: url), let host = u.host, !u.lastPathComponent.isEmpty, u.lastPathComponent != "/" else { return nil }
+    let name = u.lastPathComponent
+    let ext = u.pathExtension.lowercased()
+    let site = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    if ["mp4", "m4v", "webm", "mov"].contains(ext) { return PageInfo(title: name, video: url, siteName: site) }
+    if ["gif", "png", "jpg", "jpeg", "webp", "avif"].contains(ext) { return PageInfo(title: name, image: url, siteName: site) }
+    return nil
 }
 
 /// 사이트 로고 (Google 파비콘 서비스)
@@ -173,7 +191,7 @@ public struct FxTweet: Decodable, Sendable {
     public struct Author: Decodable, Sendable { public var name: String?; public var screen_name: String?; public var avatar_url: String? }
     public struct Media: Decodable, Sendable {
         public struct Photo: Decodable, Sendable { public var url: String? }
-        public struct Video: Decodable, Sendable { public var thumbnail_url: String? }
+        public struct Video: Decodable, Sendable { public var url: String?; public var thumbnail_url: String?; public var type: String? }
         public var photos: [Photo]?
         public var videos: [Video]?
     }
@@ -188,12 +206,18 @@ public func parseFxTweet(_ t: FxTweet) -> PageInfo {
     let body = text.isEmpty ? "" : clip(text.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression), 400)
     let name = clean(t.author?.name)
     let image = t.media?.photos?.first?.url ?? t.media?.videos?.first?.thumbnail_url ?? t.author?.avatar_url?.replacingOccurrences(of: "_normal.", with: "_200x200.")
-    return PageInfo(
+    var info = PageInfo(
         title: body.isEmpty && !name.isEmpty ? "\(name)의 게시물" : nil,
         description: body.nilIfEmpty,
         image: image,
+        // 영상·움짤(X 는 움짤도 mp4)
+        video: t.media?.videos?.first(where: { $0.url != nil })?.url,
         siteName: t.author?.screen_name.map { "X · @\($0)" } ?? "X"
     )
+    info.avatar = t.author?.avatar_url?.replacingOccurrences(of: "_normal.", with: "_200x200.")
+    let photos = (t.media?.photos ?? []).compactMap(\.url)
+    if photos.count > 1 { info.images = Array(photos.prefix(4)) }
+    return info
 }
 
 // MARK: - 가져오기
@@ -219,6 +243,7 @@ public struct PageInfoFetcher: Sendable {
     }
 
     public func fetch(_ url: String) async -> PageInfo? {
+        if let direct = directMedia(url) { return direct }
         if let id = xStatusID(url), let (data, _) = await get("https://api.fxtwitter.com/status/\(id)"),
            let body = try? JSONDecoder().decode(FxBody.self, from: data), let tweet = body.tweet {
             return parseFxTweet(tweet)

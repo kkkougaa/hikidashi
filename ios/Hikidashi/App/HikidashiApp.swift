@@ -36,6 +36,7 @@ struct RootView: View {
     @State private var drawerOpen = false
     @State private var drag: CGFloat = 0
     @State private var settingsOpen = false
+    @AppStorage("viewMode") private var viewMode = "list"
 
     var body: some View {
         @Bindable var store = store
@@ -46,13 +47,23 @@ struct RootView: View {
                 NavigationStack {
                     ItemsScreen(scope: scope, onMenu: { setDrawer(true) }).id(scope)
                 }
-                .overlay(alignment: .bottomTrailing) {
+                .overlay(alignment: .bottom) {
                     if store.selection == nil {
-                        PullAddButton(
-                            onTap: { store.editor = EditorRequest() },
-                            onPull: { store.quickAddFromPasteboard(into: currentFolderId) }
-                        )
-                        .padding(.trailing, 20)
+                        // 하단바(왼쪽) + 추가 버튼(오른쪽). 아래로 스크롤하면 하단바가 + 쪽으로 빨려 들어간다
+                        ZStack(alignment: .bottomTrailing) {
+                            DockBar(viewMode: $viewMode, collapsed: store.chromeCollapsed, onSettings: { settingsOpen = true })
+                                .scaleEffect(x: store.chromeCollapsed ? 0.18 : 1, y: store.chromeCollapsed ? 0.7 : 1, anchor: .trailing)
+                                .blur(radius: store.chromeCollapsed ? 6 : 0)
+                                .opacity(store.chromeCollapsed ? 0 : 1)
+                                .frame(maxWidth: .infinity, alignment: store.chromeCollapsed ? .trailing : .leading)
+                                .padding(.trailing, store.chromeCollapsed ? 20 : 0)
+                                .allowsHitTesting(!store.chromeCollapsed)
+                            PullAddButton(
+                                onTap: { store.editor = EditorRequest() },
+                                onPull: { store.quickAddFromPasteboard(into: currentFolderId) }
+                            )
+                        }
+                        .padding(.horizontal, 20)
                         .padding(.bottom, 12)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                     }
@@ -67,6 +78,7 @@ struct RootView: View {
 
                 DrawerView(selected: scope, onSelect: { s in
                     store.stopSelecting()
+                    store.chromeCollapsed = false
                     scope = s
                     setDrawer(false)
                 }, onSettings: {

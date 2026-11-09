@@ -1,5 +1,6 @@
 import SafariServices
 import SwiftUI
+import CoreHaptics
 import HikidashiCore
 
 /// + 버튼. 동그란 리퀴드 글래스. 누르면 새 항목, 위로 끌면 같은 두께의 캡슐로 늘어나고, 기준을 넘겨 놓으면 클립보드 링크를 바로 넣는다
@@ -10,6 +11,8 @@ struct PullAddButton: View {
     @State private var pull: CGFloat = 0
     @State private var armed = false
     @State private var dragging = false
+    /// 손가락이 닿아 있는 동안: 젤리처럼 옆으로 퍼지며 10% 커진다
+    @State private var pressed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let size: CGFloat = 60
@@ -38,12 +41,19 @@ struct PullAddButton: View {
                         .contentTransition(.symbolEffect(.replace))
                         .frame(width: size, height: size)
                 }
+                // 짜부: 가로는 더, 세로는 덜 커져서 눌린 젤리처럼 (끌어올리는 중엔 길어지는 쪽이 우선)
+                .scaleEffect(x: pressed && !reduceMotion ? 1.12 : 1, y: pressed && !reduceMotion ? (dragging ? 1 : 1.03) : 1, anchor: .bottom)
         }
         .frame(width: size, height: size, alignment: .bottom)
         .contentShape(.rect)
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { v in
+                    if !pressed {
+                        // 닿는 순간: 톡 + 눌림
+                        Haptics.shared.touchDown()
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.55)) { pressed = true }
+                    }
                     let raw = max(0, -v.translation.height)
                     if !dragging, raw > 8 { withAnimation(.easeOut(duration: 0.15)) { dragging = true } }
                     guard dragging else { return }
@@ -54,6 +64,9 @@ struct PullAddButton: View {
                 .onEnded { v in
                     let moved = hypot(v.translation.width, v.translation.height)
                     if !dragging, moved < 10 { onTap() } else if armed { onPull() }
+                    // 떼는 순간: 위이잉 (세졌다 잦아드는 진동) + 젤리처럼 출렁이며 돌아온다
+                    Haptics.shared.release(strong: armed)
+                    withAnimation(.spring(response: 0.42, dampingFraction: 0.38)) { pressed = false }
                     withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) { pull = 0; armed = false; dragging = false }
                 }
         )
@@ -153,4 +166,52 @@ struct SafariView: UIViewControllerRepresentable {
         return vc
     }
     func updateUIViewController(_ vc: SFSafariViewController, context: Context) {}
+}
+
+/// 추가 버튼 진동. 닿을 때 짧게 톡, 뗄 때 위이잉(세졌다가 잦아드는 쫀득한 진동)
+@MainActor
+final class Haptics {
+    static let shared = Haptics()
+    private var engine: CHHapticEngine?
+    private let tap = UIImpactFeedbackGenerator(style: .soft)
+
+    private init() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
+        engine = try? CHHapticEngine()
+        engine?.isAutoShutdownEnabled = true
+    }
+
+    func touchDown() {
+        tap.prepare()
+        tap.impactOccurred(intensity: 0.7)
+    }
+
+    func release(strong: Bool = false) {
+        guard let engine else {
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+            return
+        }
+        // 0.26초 동안 세기가 0.35 → 1 → 0 으로, 끝에 작은 톡
+        let peak: Float = strong ? 1 : 0.85
+        let hum = CHHapticEvent(eventType: .hapticContinuous, parameters: [
+            CHHapticEventParameter(parameterID: .hapticIntensity, value: peak),
+            CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.18),
+        ], relativeTime: 0, duration: 0.26)
+        let curve = CHHapticParameterCurve(parameterID: .hapticIntensityControl, controlPoints: [
+            .init(relativeTime: 0, value: 0.35),
+            .init(relativeTime: 0.08, value: 1),
+            .init(relativeTime: 0.26, value: 0),
+        ], relativeTime: 0)
+        let tick = CHHapticEvent(eventType: .hapticTransient, parameters: [
+            CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.55),
+            CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.5),
+        ], relativeTime: 0.27)
+        do {
+            try engine.start()
+            let pattern = try CHHapticPattern(events: [hum, tick], parameterCurves: [curve])
+            try engine.makePlayer(with: pattern).start(atTime: CHHapticTimeImmediate)
+        } catch {
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        }
+    }
 }

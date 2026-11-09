@@ -38,8 +38,12 @@ export interface Base {
 
 export interface Folder extends Base {
   name: string;
+  /** 하위 서랍은 화면에서 상위 서랍 색을 따른다 (값은 만들 때 상위 색을 넣어 둔다) */
   color: ColorKey;
+  /** 순서. 하위 서랍은 같은 상위 서랍 안에서의 순서 */
   order: number;
+  /** 하위 서랍이면 상위 서랍 id (한 단계만). 없거나 null 이면 위 단계 */
+  parentId?: string | null;
 }
 
 export type ItemKind = 'link' | 'memo';
@@ -53,6 +57,12 @@ export interface Item extends Base {
   note: string;
   /** 링크 글의 대표 이미지 주소. 없으면 사이트 로고를 쓴다 */
   image?: string;
+  /** 링크에 딸린 영상 주소 (mp4 등). 카드에서 2초만 소리 없이 반복 재생한다 */
+  video?: string;
+  /** 글 쓴 사람 프로필 사진 (X 등 SNS). 타임라인 보기의 동그란 사진 자리 */
+  avatar?: string;
+  /** 게시물에 붙은 사진 전부 (X 는 최대 4장). 타임라인 보기에서 다 보여준다 */
+  images?: string[];
   /** 사이트가 밝힌 이름 (예: MDN Web Docs) */
   siteName?: string;
   /** 직접 고른 아이콘 이모지 (토스페이스로 그린다). 있으면 이미지·로고보다 먼저 쓴다 */
@@ -67,9 +77,11 @@ export interface Item extends Base {
   brokenAt?: number | null;
   /** 링크 점검을 마지막으로 한 때 */
   checkedAt?: number;
+  /** 확인 완료한 때. 있으면 목록에서 빠지고 "완료함" 에만 보인다 */
+  doneAt?: number | null;
 }
 
-export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags' | 'image' | 'siteName' | 'emoji'>;
+export type ItemDraft = Pick<Item, 'kind' | 'url' | 'title' | 'note' | 'folderId' | 'tags' | 'image' | 'video' | 'avatar' | 'images' | 'siteName' | 'emoji'>;
 
 export interface Backup {
   app: 'hikidashi';

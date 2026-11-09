@@ -23,7 +23,7 @@ let unfiledColor = FolderColor.gray.color
 
 /// 보고 있는 범위
 enum Scope: Hashable {
-    case all, starred, unfiled, highlights, broken
+    case all, starred, unfiled, highlights, broken, done, memos
     case folder(String)
     case tag(String)
 }

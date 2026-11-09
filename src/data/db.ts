@@ -67,6 +67,13 @@ export async function requestPersistence(): Promise<boolean> {
   }
 }
 
+/** 본문 검색용: 저장한 본문 전체 (id → 글) */
+export async function allArticleTexts(): Promise<Map<string, string>> {
+  const d = await db();
+  const [keys, values] = await Promise.all([d.getAllKeys('articles'), d.getAll('articles')]);
+  return new Map(keys.map((k, n) => [String(k), [values[n]?.title ?? '', ...(values[n]?.blocks ?? []).map(b => ('text' in b ? b.text : ''))].join(' ').toLowerCase()]));
+}
+
 export async function getArticle(id: string): Promise<Article | undefined> {
   return (await db()).get('articles', id);
 }

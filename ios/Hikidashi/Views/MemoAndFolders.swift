@@ -102,7 +102,13 @@ struct FolderEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var color: FolderColor = .blue
+    @State private var parentId: String?
     @State private var error: String?
+
+    /// 상위 서랍이 될 수 있는 것: 위 단계 서랍 (자기 자신 빼고)
+    private var parents: [Folder] { store.library.orderedFolders.filter { $0.depth == 0 && $0.folder.id != folder?.id }.map(\.folder) }
+    /// 하위 서랍이 있는 서랍은 하위로 못 간다 (한 단계만)
+    private var hasChildren: Bool { folder.map { f in store.folders.contains { $0.parentId == f.id } } ?? false }
 
     var body: some View {
         NavigationStack {
@@ -110,6 +116,18 @@ struct FolderEditor: View {
                 VStack(alignment: .leading, spacing: 20) {
                     TextField("서랍 이름", text: $name).font(.title2.weight(.semibold)).onChange(of: name) { error = nil }
                     if let error { Text(error).font(.footnote.weight(.semibold)).foregroundStyle(.red) }
+                    if !hasChildren && !parents.isEmpty {
+                        HStack {
+                            Text("상위 서랍").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                            Spacer()
+                            Picker("상위 서랍", selection: $parentId) {
+                                Text("없음 (맨 위)").tag(String?.none)
+                                ForEach(parents) { p in Text(p.name).tag(Optional(p.id)) }
+                            }
+                            .pickerStyle(.menu)
+                        }
+                    }
+                    if parentId == nil {
                     Text("색").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 46), spacing: 10)], spacing: 10) {
                         ForEach(FolderColor.allCases, id: \.self) { c in
@@ -123,13 +141,14 @@ struct FolderEditor: View {
                             .accessibilityAddTraits(color == c ? .isSelected : [])
                         }
                     }
+                    }
                     if let folder {
-                        let n = store.library.count(inFolder: folder.id)
+                        let n = store.count(inFolder: folder.id)
                         Button(role: .destructive) { dismiss(); store.removeFolder(folder) } label: {
                             Text("서랍 삭제").frame(maxWidth: .infinity, minHeight: 52)
                         }
                         .buttonStyle(.bordered).buttonBorderShape(.roundedRectangle(radius: 16)).tint(.red)
-                        if n > 0 { Text("안의 항목 \(n)개는 미분류로 옮겨져요").font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity) }
+                        if n > 0 || hasChildren { Text("\(hasChildren ? "하위 서랍도 같이 지워지고, " : "")안의 항목 \(n)개는 미분류로 옮겨져요").font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity) }
                     }
                 }
                 .padding(20)
@@ -144,14 +163,18 @@ struct FolderEditor: View {
             }
         }
         .presentationDetents([.large])
-        .onAppear { name = folder?.name ?? ""; color = folder?.color ?? .blue }
+        .onAppear {
+            name = folder?.name ?? ""
+            color = folder?.color ?? .blue
+            parentId = folder.flatMap { f in store.library.isChild(f) ? f.parentId : nil }
+        }
     }
 
     private func save() {
         let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !n.isEmpty else { error = "서랍 이름을 적어주세요"; return }
         guard !store.folders.contains(where: { $0.name == n && $0.id != folder?.id }) else { error = "같은 이름의 서랍이 이미 있어요"; return }
-        if let folder { store.updateFolder(folder.id, name: n, color: color) } else { store.addFolder(name: n, color: color) }
+        if let folder { store.updateFolder(folder.id, name: n, color: color, parentId: parentId) } else { store.addFolder(name: n, color: color, parentId: parentId) }
         dismiss()
     }
 }

@@ -1,3 +1,4 @@
+import AVFoundation
 import CryptoKit
 import SwiftUI
 import HikidashiCore
@@ -284,5 +285,61 @@ struct BrokenBadge: View {
             .padding(.horizontal, 7).frame(height: 22)
             .background(Color.red.opacity(0.85), in: .rect(cornerRadius: 6))
             .accessibilityLabel("링크가 열리지 않아요")
+    }
+}
+
+/// 영상은 2초만 소리 없이 반복한다 (웹 LoopClip 과 같은 규칙).
+/// 화면에 보일 때만 받아서 틀고, 움직임 줄이기·저전력 모드면 틀지 않는다(그림만).
+/// 긴 영상은 앞부분(제목·검은 화면)을 건너뛰고 20% 지점(최대 10초)부터.
+struct LoopingClip: View {
+    let url: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var player: AVQueuePlayer?
+    @State private var looper: AVPlayerLooper?
+
+    var body: some View {
+        PlayerLayerView(player: player)
+            .opacity(player == nil ? 0 : 1)
+            .task(id: url) { await prepare() }
+            .onAppear { if !reduceMotion { player?.play() } }
+            .onDisappear { player?.pause() }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private func prepare() async {
+        guard player == nil, !reduceMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled, let u = URL(string: url) else { return }
+        let asset = AVURLAsset(url: u)
+        guard let duration = try? await asset.load(.duration), !Task.isCancelled else { return }
+        let total = duration.seconds
+        let start = total.isFinite && total > 6 ? min(total * 0.2, 10) : 0
+        let length = total.isFinite && total > 0 ? min(2, total - start) : 2
+        let range = CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 600), duration: CMTime(seconds: length, preferredTimescale: 600))
+        // 소리 없는 영상이 다른 앱 음악을 멈추지 않게
+        try? AVAudioSession.sharedInstance().setCategory(.ambient, options: .mixWithOthers)
+        let q = AVQueuePlayer()
+        q.isMuted = true
+        q.preventsDisplaySleepDuringVideoPlayback = false
+        looper = AVPlayerLooper(player: q, templateItem: AVPlayerItem(asset: asset), timeRange: range)
+        player = q
+        q.play()
+    }
+}
+
+private struct PlayerLayerView: UIViewRepresentable {
+    let player: AVPlayer?
+
+    func makeUIView(context: Context) -> PlayerUIView { PlayerUIView() }
+    func updateUIView(_ view: PlayerUIView, context: Context) { view.playerLayer.player = player }
+
+    final class PlayerUIView: UIView {
+        override class var layerClass: AnyClass { AVPlayerLayer.self }
+        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            playerLayer.videoGravity = .resizeAspectFill
+            backgroundColor = .clear
+        }
+        required init?(coder: NSCoder) { fatalError("코드로만 만든다") }
     }
 }

@@ -23,13 +23,13 @@ final class ScreenshotTests: XCTestCase {
         sleep(2) // 이미지 불러오기
         snap("01-list")
 
-        // 카드 보기
-        let grid = app.segmentedControls.buttons.element(boundBy: 1)
-        if grid.waitForExistence(timeout: 3) {
-            grid.tap()
+        // 미디어(카드) 보기: 하단바
+        let media = app.buttons["미디어"].firstMatch
+        if media.waitForExistence(timeout: 3) {
+            media.tap()
             sleep(1)
             snap("02-grid")
-            app.segmentedControls.buttons.element(boundBy: 0).tap()
+            app.buttons["타임라인"].firstMatch.tap()
         }
 
         // 메모 보기
@@ -49,7 +49,7 @@ final class ScreenshotTests: XCTestCase {
 
         // 왼쪽 서랍
         app.buttons["서랍 열기"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["설정"].waitForExistence(timeout: 3), "서랍이 열려야 한다")
+        XCTAssertTrue(app.buttons["아이디어"].waitForExistence(timeout: 3), "서랍이 열려야 한다")
         sleep(1)
         snap("05-drawer")
 
@@ -58,8 +58,7 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["장보기"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["CSS 그리드 레이아웃"].exists, "다른 서랍 항목은 안 보여야 한다")
 
-        // 설정
-        app.buttons["서랍 열기"].firstMatch.tap()
+        // 설정: 하단바
         app.buttons["설정"].firstMatch.tap()
         XCTAssertTrue(app.buttons["설정 닫기"].waitForExistence(timeout: 5))
         sleep(1)

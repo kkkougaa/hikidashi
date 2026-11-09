@@ -73,6 +73,8 @@ public struct Folder: Codable, Identifiable, Hashable, Sendable {
     public var createdAt: Millis
     public var updatedAt: Millis
     public var deletedAt: Millis?
+    /// 하위 서랍이면 상위 서랍 id (한 단계만). 하위 서랍은 화면에서 상위 서랍 색을 따른다
+    public var parentId: String?
 
     public init(id: String = newID(), name: String, color: FolderColor, order: Int, createdAt: Millis = .now, updatedAt: Millis? = nil, deletedAt: Millis? = nil) {
         self.id = id
@@ -84,7 +86,7 @@ public struct Folder: Codable, Identifiable, Hashable, Sendable {
         self.deletedAt = deletedAt
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, color, order, createdAt, updatedAt, deletedAt }
+    enum CodingKeys: String, CodingKey { case id, name, color, order, createdAt, updatedAt, deletedAt, parentId }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -95,6 +97,7 @@ public struct Folder: Codable, Identifiable, Hashable, Sendable {
         createdAt = try c.decodeNumber(forKey: .createdAt)
         updatedAt = try c.decodeNumber(forKey: .updatedAt)
         deletedAt = try c.decodeNumberIfPresent(forKey: .deletedAt)
+        parentId = try? c.decodeIfPresent(String.self, forKey: .parentId)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -107,6 +110,7 @@ public struct Folder: Codable, Identifiable, Hashable, Sendable {
         try c.encode(updatedAt, forKey: .updatedAt)
         // 웹은 deletedAt 이 null 이어야 읽으므로 비어 있어도 null 로 쓴다
         try c.encode(deletedAt, forKey: .deletedAt)
+        try c.encodeIfPresent(parentId, forKey: .parentId)
     }
 }
 
@@ -120,6 +124,14 @@ public struct Item: Codable, Identifiable, Hashable, Sendable {
     /// 링크는 내용(페이지 소개문), 메모는 본문
     public var note: String
     public var image: String?
+    /// 링크에 딸린 영상 주소 (mp4 등). 카드에서 2초만 소리 없이 반복 재생한다
+    public var video: String?
+    /// 확인 완료한 때. 있으면 목록에서 빠지고 "완료함" 에만 보인다
+    public var doneAt: Millis?
+    /// 글 쓴 사람 프로필 사진 (X 등 SNS). 타임라인 보기의 동그란 사진 자리
+    public var avatar: String?
+    /// 게시물에 붙은 사진 전부 (X 는 최대 4장). 비면 저장하지 않는다
+    public var images: [String] = []
     public var siteName: String?
     public var emoji: String?
     public var folderId: String?
@@ -152,7 +164,7 @@ public struct Item: Codable, Identifiable, Hashable, Sendable {
         self.deletedAt = deletedAt
     }
 
-    enum CodingKeys: String, CodingKey { case id, kind, url, title, note, image, siteName, emoji, folderId, tags, starred, createdAt, updatedAt, deletedAt, highlights, brokenAt, checkedAt }
+    enum CodingKeys: String, CodingKey { case id, kind, url, title, note, image, video, doneAt, avatar, images, siteName, emoji, folderId, tags, starred, createdAt, updatedAt, deletedAt, highlights, brokenAt, checkedAt }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -162,6 +174,10 @@ public struct Item: Codable, Identifiable, Hashable, Sendable {
         title = try c.decode(String.self, forKey: .title)
         note = try c.decode(String.self, forKey: .note)
         image = try c.decodeIfPresent(String.self, forKey: .image)
+        video = try c.decodeIfPresent(String.self, forKey: .video)
+        doneAt = try? c.decodeNumberIfPresent(forKey: .doneAt)
+        avatar = try? c.decodeIfPresent(String.self, forKey: .avatar)
+        images = (try? c.decodeIfPresent([String].self, forKey: .images)) ?? []
         siteName = try c.decodeIfPresent(String.self, forKey: .siteName)
         emoji = try c.decodeIfPresent(String.self, forKey: .emoji)
         folderId = try c.decodeIfPresent(String.self, forKey: .folderId)
@@ -183,6 +199,10 @@ public struct Item: Codable, Identifiable, Hashable, Sendable {
         try c.encode(title, forKey: .title)
         try c.encode(note, forKey: .note)
         try c.encodeIfPresent(image, forKey: .image)
+        try c.encodeIfPresent(video, forKey: .video)
+        try c.encodeIfPresent(doneAt, forKey: .doneAt)
+        try c.encodeIfPresent(avatar, forKey: .avatar)
+        if !images.isEmpty { try c.encode(images, forKey: .images) }
         try c.encodeIfPresent(siteName, forKey: .siteName)
         try c.encodeIfPresent(emoji, forKey: .emoji)
         try c.encode(folderId, forKey: .folderId) // 미분류는 null
@@ -216,6 +236,9 @@ public struct ItemDraft: Equatable, Sendable {
     public var title: String
     public var note: String
     public var image: String?
+    public var video: String?
+    public var avatar: String?
+    public var images: [String] = []
     public var siteName: String?
     public var emoji: String?
     public var folderId: String?

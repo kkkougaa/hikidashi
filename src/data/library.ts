@@ -31,12 +31,13 @@ export interface Library {
   folders: Folder[];
   /** id 를 넘기면 그 id 로 만든다 (애니메이션 안에서 추가해도 id 를 미리 알 수 있게) */
   addItem: (d: ItemDraft, id?: string) => Item;
-  updateItem: (id: string, patch: Partial<ItemDraft & {starred: boolean}>) => void;
+  updateItem: (id: string, patch: Partial<ItemDraft & {starred: boolean; doneAt: number | null}>) => void;
   removeItem: (id: string) => void;
   restoreItem: (id: string) => void;
-  addFolder: (name: string, color: ColorKey) => Folder;
-  updateFolder: (id: string, patch: Partial<Pick<Folder, 'name' | 'color' | 'order'>>) => void;
-  /** 서랍을 지우고 안의 항목은 미분류로 옮긴다. 되돌리기용 함수를 돌려준다 */
+  /** parentId 를 주면 그 서랍의 하위 서랍 (색은 상위 서랍 것) */
+  addFolder: (name: string, color: ColorKey, parentId?: string | null) => Folder;
+  updateFolder: (id: string, patch: Partial<Pick<Folder, 'name' | 'color' | 'order' | 'parentId'>>) => void;
+  /** 서랍(과 하위 서랍)을 지우고 안의 항목은 미분류로 옮긴다. 되돌리기용 함수를 돌려준다 */
   removeFolder: (id: string) => () => void;
   importBackup: (b: Backup) => {items: number; folders: number};
   allRecords: () => {items: Item[]; folders: Folder[]};
@@ -116,9 +117,12 @@ export function useLibrary(): Library {
       const cur = find(id);
       if (cur) writeItems([{...cur, deletedAt: null, updatedAt: Date.now()}]);
     },
-    addFolder: (name, color) => {
+    addFolder: (name, color, parentId = null) => {
       const live = foldersRef.current.filter(f => !f.deletedAt);
-      const f = newFolder(name, color, live.length ? Math.max(...live.map(x => x.order)) + 1 : 0);
+      const parent = parentId ? live.find(f => f.id === parentId) : undefined;
+      const siblings = live.filter(f => (f.parentId ?? null) === (parent?.id ?? null));
+      const f = newFolder(name, parent?.color ?? color, siblings.length ? Math.max(...siblings.map(x => x.order)) + 1 : 0);
+      if (parent) f.parentId = parent.id;
       writeFolders([f]);
       return f;
     },
@@ -129,16 +133,19 @@ export function useLibrary(): Library {
     removeFolder: id => {
       const now = Date.now();
       const folder = foldersRef.current.find(f => f.id === id);
-      const moved = itemsRef.current.filter(i => i.folderId === id);
       if (!folder) return () => {};
-      writeFolders([{...folder, deletedAt: now, updatedAt: now}]);
+      // 하위 서랍도 같이 지운다
+      const gone = [folder, ...foldersRef.current.filter(f => f.parentId === id && f.id !== id && !f.deletedAt)];
+      const goneIds = new Set(gone.map(f => f.id));
+      const moved = itemsRef.current.filter(i => i.folderId && goneIds.has(i.folderId));
+      const from = new Map(moved.map(i => [i.id, i.folderId]));
+      writeFolders(gone.map(f => ({...f, deletedAt: now, updatedAt: now})));
       if (moved.length) writeItems(moved.map(i => ({...i, folderId: null, updatedAt: now})));
       return () => {
         const t = Date.now();
-        writeFolders([{...folder, deletedAt: null, updatedAt: t}]);
-        const ids = new Set(moved.map(m => m.id));
-        const back = itemsRef.current.filter(i => ids.has(i.id) && i.folderId === null);
-        if (back.length) writeItems(back.map(i => ({...i, folderId: id, updatedAt: t})));
+        writeFolders(gone.map(f => ({...f, deletedAt: null, updatedAt: t})));
+        const back = itemsRef.current.filter(i => from.has(i.id) && i.folderId === null);
+        if (back.length) writeItems(back.map(i => ({...i, folderId: from.get(i.id) ?? null, updatedAt: t})));
       };
     },
     importBackup: b => {

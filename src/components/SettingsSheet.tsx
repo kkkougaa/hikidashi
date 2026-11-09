@@ -102,6 +102,7 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
   const [view, setView] = usePref('view');
   const [linkOpen, setLinkOpen] = usePref('linkOpen');
   const [saveArticles, setSaveArticles] = usePref('saveArticles');
+  const [groupBy, setGroupBy] = usePref('groupBy');
   const [defaultFolder, setDefaultFolder] = usePref('defaultFolder');
   const [articles, setArticles] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -154,8 +155,15 @@ export function SettingsSheet({isOpen, onClose, records, liveCount, onImport, no
         <div className="set-row static">
           <span className="grow">기본 보기</span>
           <SegmentedControl label="기본 보기" value={view} onChange={v => setView(v as typeof view)} size="sm">
-            <SegmentedControlItem value="list" label="목록" />
-            <SegmentedControlItem value="card" label="카드" />
+            <SegmentedControlItem value="list" label="타임라인" />
+            <SegmentedControlItem value="card" label="미디어" />
+          </SegmentedControl>
+        </div>
+        <div className="set-row static">
+          <span className="grow">목록 묶음</span>
+          <SegmentedControl label="목록 묶음" value={groupBy} onChange={v => setGroupBy(v as typeof groupBy)} size="sm">
+            <SegmentedControlItem value="day" label="날짜" />
+            <SegmentedControlItem value="site" label="사이트" />
           </SegmentedControl>
         </div>
         <div className="set-row static">

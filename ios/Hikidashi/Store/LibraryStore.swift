@@ -48,6 +48,12 @@ final class LibraryStore {
     /// 최근에 연 항목 (이 기기에만, 최신이 앞)
     private(set) var recentIDs: [String] = UserDefaults.standard.stringArray(forKey: "recentIDs") ?? []
     private(set) var checkingLinks = false
+    /// NSFW 태그가 달린 항목을 보여줄지 (이 기기에만, 기본은 숨김)
+    private(set) var showNsfw: Bool = UserDefaults.standard.bool(forKey: "showNsfw")
+    /// 아래로 스크롤해서 하단바를 + 버튼으로 접었는지
+    var chromeCollapsed = false
+    /// 본문 검색용: 저장한 리더 본문 (id → 글, 소문자). 검색을 시작할 때 읽는다
+    @ObservationIgnored private var articleTexts: [String: String]?
     /// 동기화 상태 (드롭박스 + 동기화 암호)
     private(set) var syncState: SyncState = .off
     private var syncTask: Task<Void, Never>?
@@ -129,26 +135,65 @@ final class LibraryStore {
     // MARK: 읽기
 
     var folders: [Folder] { library.liveFolders }
-    var allItems: [Item] { library.liveItems }
-    func folder(_ id: String?) -> Folder? { library.folder(id) }
+    /// NSFW 를 숨기면 어디에도 안 나온다
+    var allItems: [Item] { showNsfw ? library.liveItems : library.liveItems.filter { !Library.isNsfw($0) } }
+    /// 목록에 보이는 항목 (확인 완료한 건 완료함에만)
+    var activeItems: [Item] { allItems.filter { $0.doneAt == nil } }
+    /// 화면에 보여줄 서랍: 하위 서랍은 이름이 "상위-하위", 색은 상위 것
+    func folder(_ id: String?) -> Folder? {
+        guard var f = library.folder(id) else { return nil }
+        f.name = library.displayName(f)
+        f.color = library.displayColor(f)
+        return f
+    }
+    /// 고르기 목록용: 상위 다음에 하위 (보여줄 이름·색으로)
+    var pickFolders: [Folder] { library.orderedFolders.compactMap { folder($0.folder.id) } }
+    /// 서랍에 든 항목 수 (상위 서랍은 하위 것까지)
+    func count(inFolder id: String) -> Int {
+        let fam = library.family(id)
+        return activeItems.filter { i in i.folderId.map { fam.contains($0) } ?? false }.count
+    }
+
+    /// 저장한 본문을 한 번 읽어 둔다 (검색에서 본문까지 찾게)
+    private func articleText(_ id: String) -> String? {
+        if articleTexts == nil {
+            var m: [String: String] = [:]
+            let files = (try? FileManager.default.contentsOfDirectory(atPath: ArticleDisk.folder.path)) ?? []
+            for f in files where f.hasSuffix(".json") {
+                let id = String(f.dropLast(5))
+                if let a = ArticleDisk.load(id) { m[id] = ([a.title ?? ""] + a.blocks.compactMap(\.text)).joined(separator: " ").lowercased() }
+            }
+            articleTexts = m
+        }
+        return articleTexts?[id]
+    }
+    /// 검색이 끝나면 다음 검색 때 새로 읽게
+    func forgetArticleTexts() { articleTexts = nil }
     func item(_ id: String?) -> Item? { id.flatMap { library.item($0) }.flatMap { $0.deletedAt == nil ? $0 : nil } }
 
     func items(in scope: Scope, query: String = "") -> [Item] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return library.liveItems.filter { i in
+        var fam: Set<String> = []
+        if case .folder(let id) = scope { fam = library.family(id) }
+        let source = scope == .done ? allItems.filter { $0.doneAt != nil }.sorted { ($0.doneAt ?? 0) > ($1.doneAt ?? 0) }
+            : scope == .highlights ? allItems : activeItems
+        return source.filter { i in
             let inScope: Bool
             switch scope {
-            case .all: inScope = true
+            case .all, .done: inScope = true
+            case .memos: inScope = i.kind == .memo
             case .starred: inScope = i.starred
             case .unfiled: inScope = library.folder(i.folderId) == nil
-            case .folder(let id): inScope = i.folderId == id
+            case .folder: inScope = i.folderId.map { fam.contains($0) } ?? false
             case .tag(let t): inScope = i.tags.contains(t)
             case .highlights: inScope = !i.highlights.isEmpty
             case .broken: inScope = i.brokenAt != nil
             }
             guard inScope else { return false }
             guard !q.isEmpty else { return true }
-            return [i.title, i.note, i.url ?? "", domain(of: i.url), i.tags.joined(separator: " ")].joined(separator: " ").lowercased().contains(q)
+            // 본문 검색: 저장해 둔 리더 본문까지
+            let fields = [i.title, i.note, i.url ?? "", domain(of: i.url), i.siteName ?? "", i.tags.joined(separator: " "), i.highlights.joined(separator: " ")]
+            return fields.joined(separator: " ").lowercased().contains(q) || (articleText(i.id)?.contains(q) ?? false)
         }
     }
 
@@ -161,6 +206,8 @@ final class LibraryStore {
         case .tag(let t): "#\(t)"
         case .highlights: "하이라이트"
         case .broken: "열리지 않는 링크"
+        case .done: "완료함"
+        case .memos: "메모"
         }
     }
 
@@ -319,6 +366,36 @@ final class LibraryStore {
     func apply(_ d: ItemDraft, to id: String) { change { $0.apply(d, to: id) }; show("고쳤어요") }
     func toggleStar(_ item: Item) { change { $0.toggleStar(item.id) } }
 
+    /// 확인 완료 ↔ 완료 취소. 완료하면 목록에서 빠지고 완료함으로
+    func toggleDone(_ item: Item) {
+        let was = item.doneAt
+        let now = Millis.now
+        change { $0.update(item.id) { $0.doneAt = was == nil ? now : nil } }
+        show(was == nil ? "‘\(item.displayTitle)’ 확인 완료" : "‘\(item.displayTitle)’ 완료 취소") { [weak self] in
+            self?.change { $0.update(item.id) { $0.doneAt = was } }
+        }
+    }
+
+    /// NSFW 항목 보이기 ↔ 숨기기 (이 기기에만)
+    func toggleShowNsfw() {
+        showNsfw.toggle()
+        UserDefaults.standard.set(showNsfw, forKey: "showNsfw")
+        show(showNsfw ? "NSFW 항목을 보여줘요" : "NSFW 항목을 숨겼어요")
+    }
+
+    /// NSFW 태그 달기 ↔ 빼기
+    func toggleNsfw(_ item: Item) {
+        let on = !Library.isNsfw(item)
+        change { $0.update(item.id) { $0.tags = Library.withNsfw($0.tags, on) } }
+        show(on ? (showNsfw ? "NSFW 로 표시했어요" : "NSFW 로 표시해서 숨겼어요") : "NSFW 표시를 뺐어요")
+    }
+
+    func doneSelected(undo: Bool) {
+        let n = selection?.count ?? 0
+        let now = Millis.now
+        bulk(undo ? "\(n)개 완료 취소" : "\(n)개 확인 완료") { lib, id in lib.update(id) { $0.doneAt = undo ? nil : now } }
+    }
+
     func remove(_ item: Item) {
         change { $0.remove(item.id) }
         show("‘\(item.displayTitle)’ 삭제함") { [weak self] in self?.change { $0.restore(item.id) } }
@@ -331,8 +408,8 @@ final class LibraryStore {
 
     // MARK: 서랍
 
-    func addFolder(name: String, color: FolderColor) { change { $0.addFolder(name: name, color: color) }; show("‘\(name)’ 서랍을 만들었어요") }
-    func updateFolder(_ id: String, name: String, color: FolderColor) { change { $0.updateFolder(id, name: name, color: color) } }
+    func addFolder(name: String, color: FolderColor, parentId: String? = nil) { change { $0.addFolder(name: name, color: color, parentId: parentId) }; show("‘\(name)’ 서랍을 만들었어요") }
+    func updateFolder(_ id: String, name: String, color: FolderColor, parentId: String?) { change { $0.updateFolder(id, name: name, color: color, parentId: .some(parentId)) } }
 
     func removeFolder(_ f: Folder) {
         var moved: [String] = []
@@ -394,6 +471,9 @@ final class LibraryStore {
                     if it.title.isEmpty, let t = info?.title { it.title = t }
                     if it.note.isEmpty, let d = info?.description { it.note = d }
                     if it.image == nil { it.image = info?.image }
+                    if it.video == nil { it.video = info?.video }
+                    if it.avatar == nil { it.avatar = info?.avatar }
+                    if it.images.isEmpty { it.images = info?.images ?? [] }
                     if it.siteName == nil { it.siteName = info?.siteName }
                     if info == nil, it.title.isEmpty, it.note.isEmpty { it.title = guessTitle(url) }
                 }

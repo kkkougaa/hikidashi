@@ -119,6 +119,9 @@ final class ShareModel {
             if draft.title.isEmpty { draft.title = got?.title ?? "" }
             draft.note = got?.description ?? ""
             draft.image = got?.image
+            draft.video = got?.video
+            draft.avatar = got?.avatar
+            draft.images = got?.images ?? []
             draft.siteName = got?.siteName
             if draft.title.isEmpty, draft.note.isEmpty { draft.title = guessTitle(url) }
         } else {

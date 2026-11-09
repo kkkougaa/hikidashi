@@ -14,11 +14,15 @@ export interface Prefs {
   readerSpacing: number;
   /** 최근 연 항목 id (최신이 앞) */
   recent: string[];
+  /** NSFW 태그가 달린 항목을 보여줄지 (기본은 숨김) */
+  showNsfw: boolean;
+  /** 목록 묶음: 날짜별 / 사이트별 */
+  groupBy: 'day' | 'site';
 }
 
 const DEFAULTS: Prefs = {
   theme: 'system', view: 'list', defaultFolder: '', linkOpen: 'reader', saveArticles: true,
-  readerFont: 'sans', readerSize: 18, readerSpacing: 1.75, recent: [],
+  readerFont: 'sans', readerSize: 18, readerSpacing: 1.75, recent: [], showNsfw: false, groupBy: 'day',
 };
 
 const KEY = 'hikidashi-prefs';
