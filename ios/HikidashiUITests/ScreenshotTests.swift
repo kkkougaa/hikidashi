@@ -129,7 +129,11 @@ final class ScreenshotTests: XCTestCase {
 
         app.buttons["서랍 열기"].firstMatch.tap()
         app.buttons["전체"].firstMatch.tap()
-        app.staticTexts["오사카 메모"].firstMatch.tap()
+        // 타임라인은 줄이 길어서 아래에 있는 메모는 내려야 보인다
+        let memo = app.staticTexts["오사카 메모"].firstMatch
+        var tries = 0
+        while !(memo.exists && memo.isHittable) && tries < 8 { app.swipeUp(); tries += 1 }
+        memo.tap()
         XCTAssertTrue(app.buttons["메모 닫기"].waitForExistence(timeout: 5))
         sleep(3)
         snap("12-memo-links")
