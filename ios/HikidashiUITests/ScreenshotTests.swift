@@ -110,9 +110,9 @@ final class ScreenshotTests: XCTestCase {
 
         // 글 링크는 리더 모드로 열린다 (알림이 첫 줄을 가리니 사라진 뒤에)
         sleep(4)
-        // 즐겨찾기 탭도 화면 밖에 떠 있어 같은 항목이 두 개 잡힌다: 지금 보이는 홈 탭 것을 누른다
-        let rows = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'CSS 그리드 레이아웃'"))
-        let row = rows.allElementsBoundByIndex.first { $0.isHittable } ?? rows.firstMatch
+        // 고를 때처럼 제목 글자를 누른다 (화면 밖 즐겨찾기 탭에도 같은 제목이 있어 보이는 것만)
+        let titles = app.staticTexts.matching(NSPredicate(format: "label == 'CSS 그리드 레이아웃'"))
+        let row = titles.allElementsBoundByIndex.first { $0.isHittable } ?? titles.firstMatch
         row.tap()
         let opened = app.buttons["리더 닫기"].waitForExistence(timeout: 5)
         // 실패하면 원인을 알 수 있게: 화면을 남기고 한 번 더 눌러 본다 (첫 탭이 먹히는지 확인용)
