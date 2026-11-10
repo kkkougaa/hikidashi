@@ -35,31 +35,36 @@ struct RootView: View {
     @State private var scope: Scope = .all
     @State private var drawerOpen = false
     @State private var drag: CGFloat = 0
-    /// 하단바 넷째 칸: 설정이 화면을 채우고 하단바는 그대로
-    @State private var settingsOpen = false
+    /// 아래 탭 (iOS 기본 탭 막대, 리퀴드 글래스)
+    @State private var tab: RootTab = .home
     @AppStorage("viewMode") private var viewMode = "rows"
+    /// 설정: 탭 막대에 이름 없이 그림만
+    @AppStorage("hideTabTitles") private var hideTabTitles = false
 
-    /// 하단바에서 지금 켜진 칸
-    private var dockTab: DockTab? {
-        if settingsOpen { return .settings }
-        switch scope {
-        case .all: return .home
-        case .starred: return .starred
-        case .memos: return .memos
-        default: return nil
+    /// 탭 그림과 이름. 이름을 숨겨도 읽어 주는 이름은 남긴다
+    @ViewBuilder private func tabLabel(_ title: String, _ icon: String) -> some View {
+        if hideTabTitles {
+            Image(systemName: icon).accessibilityLabel(title)
+        } else {
+            Label(title, systemImage: icon)
         }
     }
 
-    private func pickTab(_ t: DockTab) {
+    /// 서랍에서 고른 범위: 즐겨찾기·메모는 그 탭으로, 나머지는 홈 탭에서 본다
+    private var drawerSelected: Scope {
+        switch tab {
+        case .starred: .starred
+        case .memos: .memos
+        default: scope
+        }
+    }
+
+    private func pick(_ s: Scope) {
         store.stopSelecting()
-        store.chromeCollapsed = false
-        withAnimation(.snappy) {
-            switch t {
-            case .home: settingsOpen = false; scope = .all
-            case .starred: settingsOpen = false; scope = .starred
-            case .memos: settingsOpen = false; scope = .memos
-            case .settings: settingsOpen = true
-            }
+        switch s {
+        case .starred: tab = .starred
+        case .memos: tab = .memos
+        default: scope = s; tab = .home
         }
     }
 
@@ -69,35 +74,18 @@ struct RootView: View {
             let width = min(320, geo.size.width * 0.84)
             let progress = drawerProgress(width)
             ZStack(alignment: .leading) {
-                NavigationStack {
-                    if settingsOpen {
-                        SettingsScreen(embedded: true, onMenu: { setDrawer(true) })
+                tabs
+                .modifier(MinimizeTabBarOnScroll())
+                .onChange(of: tab) { old, new in
+                    // + 칸은 화면이 아니라 버튼: 누르면 새 항목을 열고 보던 탭에 머문다
+                    if new == .add {
+                        tab = old
+                        store.editor = EditorRequest()
                     } else {
-                        ItemsScreen(scope: scope, onMenu: { setDrawer(true) }).id(scope)
+                        store.stopSelecting()
                     }
                 }
-                .overlay(alignment: .bottom) {
-                    if store.selection == nil {
-                        // 하단바(왼쪽) + 추가 버튼(오른쪽). 아래로 스크롤하면 하단바가 + 쪽으로 빨려 들어간다
-                        ZStack(alignment: .bottomTrailing) {
-                            DockBar(selected: dockTab, onPick: pickTab)
-                                .scaleEffect(x: store.chromeCollapsed ? 0.18 : 1, y: store.chromeCollapsed ? 0.7 : 1, anchor: .trailing)
-                                .blur(radius: store.chromeCollapsed ? 6 : 0)
-                                .opacity(store.chromeCollapsed ? 0 : 1)
-                                // + 버튼 바로 앞까지 늘려서, 바깥 여백(20)과 같은 간격을 둔다
-                                .padding(.trailing, store.chromeCollapsed ? 20 : 60 + 20)
-                                .frame(maxWidth: .infinity, alignment: store.chromeCollapsed ? .trailing : .leading)
-                                .allowsHitTesting(!store.chromeCollapsed)
-                            PullAddButton(
-                                onTap: { store.editor = EditorRequest() },
-                                onPull: { store.quickAddFromPasteboard(into: currentFolderId) }
-                            )
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 12)
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
-                    }
-                }
+                .sensoryFeedback(.selection, trigger: tab)
 
                 // 서랍이 열리면 뒤를 어둡게, 누르면 닫힘
                 Color.black.opacity(0.32 * progress)
@@ -106,15 +94,12 @@ struct RootView: View {
                     .onTapGesture { setDrawer(false) }
                     .gesture(closeDrag(width))
 
-                DrawerView(selected: scope, onSelect: { s in
-                    store.stopSelecting()
-                    store.chromeCollapsed = false
-                    settingsOpen = false
-                    scope = s
+                DrawerView(selected: drawerSelected, onSelect: { s in
+                    pick(s)
                     setDrawer(false)
                 }, onSettings: {
                     setDrawer(false)
-                    pickTab(.settings)
+                    tab = .settings
                 }, onOpen: { it in
                     setDrawer(false)
                     store.open(it)
@@ -193,9 +178,51 @@ struct RootView: View {
         }
     }
 
+    /// 아래 탭들. iOS 18 부터는 + 를 검색 역할 칸으로 둬서 탭 막대 오른쪽의 따로 떨어진 유리 동그라미가 된다.
+    /// 아래로 스크롤하면 탭 막대가 줄어들며 + 쪽으로 모인다 (iOS 26 시스템 효과)
+    @ViewBuilder private var tabs: some View {
+        if #available(iOS 18.0, *) {
+            TabView(selection: $tab) {
+                Tab(value: RootTab.home) { itemsTab(scope, fab: false).id(scope) } label: { tabLabel("홈", "house") }
+                Tab(value: RootTab.starred) { itemsTab(.starred, fab: false) } label: { tabLabel("즐겨찾기", "star") }
+                Tab(value: RootTab.memos) { itemsTab(.memos, fab: false) } label: { tabLabel("메모", "note.text") }
+                Tab(value: RootTab.settings) { NavigationStack { SettingsScreen(embedded: true, onMenu: { setDrawer(true) }) } } label: { tabLabel("설정", "gearshape") }
+                Tab(value: RootTab.add, role: .search) { Color.clear } label: { Label("추가", systemImage: "plus") }
+            }
+        } else {
+            // iOS 17: 예전 탭 막대 + 떠 있는 + 버튼
+            TabView(selection: $tab) {
+                itemsTab(scope, fab: true).id(scope).tabItem { tabLabel("홈", "house") }.tag(RootTab.home)
+                itemsTab(.starred, fab: true).tabItem { tabLabel("즐겨찾기", "star") }.tag(RootTab.starred)
+                itemsTab(.memos, fab: true).tabItem { tabLabel("메모", "note.text") }.tag(RootTab.memos)
+                NavigationStack { SettingsScreen(embedded: true, onMenu: { setDrawer(true) }) }
+                    .tabItem { tabLabel("설정", "gearshape") }.tag(RootTab.settings)
+            }
+        }
+    }
+
+    /// 목록 탭 하나. 고르는 중엔 탭 막대를 숨긴다. fab 이면 오른쪽 아래에 떠 있는 + 버튼 (iOS 17)
+    private func itemsTab(_ s: Scope, fab: Bool) -> some View {
+        NavigationStack {
+            ItemsScreen(scope: s, onMenu: { setDrawer(true) })
+                .toolbar(store.selection != nil ? .hidden : .visible, for: .tabBar)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if fab, store.selection == nil {
+                PullAddButton(
+                    onTap: { store.editor = EditorRequest() },
+                    onPull: { store.quickAddFromPasteboard(into: currentFolderId) }
+                )
+                .padding(.trailing, 20)
+                .padding(.bottom, 12)
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
+        }
+    }
+
     /// 지금 보고 있는 서랍
     private var currentFolderId: String? {
-        if case .folder(let id) = scope { return id }
+        if tab == .home, case .folder(let id) = scope { return id }
         return nil
     }
 

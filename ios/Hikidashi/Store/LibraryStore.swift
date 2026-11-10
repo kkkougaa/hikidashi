@@ -54,8 +54,6 @@ final class LibraryStore {
     private(set) var checkingLinks = false
     /// NSFW 태그가 달린 항목을 보여줄지 (이 기기에만, 기본은 숨김)
     private(set) var showNsfw: Bool = UserDefaults.standard.bool(forKey: "showNsfw")
-    /// 아래로 스크롤해서 하단바를 + 버튼으로 접었는지
-    var chromeCollapsed = false
     /// 본문 검색용: 저장한 리더 본문 (id → 글, 소문자). 검색을 시작할 때 읽는다
     @ObservationIgnored private var articleTexts: [String: String]?
     /// 동기화 상태 (드롭박스 + 동기화 암호)

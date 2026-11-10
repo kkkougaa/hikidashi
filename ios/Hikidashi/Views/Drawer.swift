@@ -151,7 +151,7 @@ struct SettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("groupBy") private var groupBy = "day"
-    @AppStorage("dockClear") private var dockClear = 0.4
+    @AppStorage("hideTabTitles") private var hideTabTitles = false
     @AppStorage("linkOpen") private var linkOpen = "reader"
     @AppStorage("saveArticles") private var saveArticles = true
     @State private var cacheSize = 0
@@ -178,12 +178,7 @@ struct SettingsScreen: View {
                         Text("날짜").tag("day")
                         Text("사이트").tag("site")
                     }
-                    LabeledContent("하단바 투명도") {
-                        HStack {
-                            Slider(value: $dockClear, in: 0...0.8, step: 0.05).frame(maxWidth: 160)
-                            Text("\(Int((dockClear * 100).rounded()))%").monospacedDigit().foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
-                        }
-                    }
+                    Toggle("탭 이름 숨기기", isOn: $hideTabTitles)
                 }
                 Section {
                     Picker("링크를 누르면", selection: $linkOpen) {
@@ -312,9 +307,6 @@ struct SettingsScreen: View {
                     }
                 }
             }
-            // 하단바에 가리지 않게
-            .safeAreaInset(edge: .bottom) { if embedded { Color.clear.frame(height: 76) } }
-            .modifier(CollapseOnScroll())
             .task {
                 backupURL = try? store.writeBackupFile()
                 cacheSize = await Task.detached { ImageCache.diskSize() }.value

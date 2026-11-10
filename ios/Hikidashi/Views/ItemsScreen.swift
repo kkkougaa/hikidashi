@@ -171,7 +171,6 @@ struct ItemsScreen: View {
             Color.clear.frame(height: 72).listRowSeparator(.hidden)
         }
         .listStyle(.plain)
-        .modifier(CollapseOnScroll())
     }
 
     /// 두 줄 벽돌 쌓기: 그림이 있는 카드는 그림 비율대로 길어지고, 짧은 쪽 줄에 다음 카드를 놓는다
@@ -199,7 +198,6 @@ struct ItemsScreen: View {
             .padding(.top, 4)
             .padding(.bottom, 110)
         }
-        .modifier(CollapseOnScroll())
     }
 }
 

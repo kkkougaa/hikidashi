@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {CheckCheck, HardDriveDownload, CircleCheck, Eye, EyeOff, Folder as FolderIcon, House, Rows3, StickyNote, Hash, Highlighter, Inbox, LayoutGrid, Link2Off, Menu, Search, Settings, SlidersHorizontal, Star, Tag, Trash2, Tray} from './icons';
 import {DropdownMenu} from '@astryxdesign/core/DropdownMenu';
 import {afterSheet, animate, haptic} from './lib/motion';
@@ -81,7 +81,6 @@ export function App() {
   const [recent] = usePref('recent');
   const [showNsfw, setShowNsfw] = usePref('showNsfw');
   const [groupBy] = usePref('groupBy');
-  const [dockClear] = usePref('dockClear');
   const [navOpen, setNavOpen] = useState(false);
   const [sheet, setSheet] = useState<null | 'item' | 'folders'>(null);
   // 오프라인 저장한 항목 (기기마다, 동기화 안 함)
@@ -625,7 +624,7 @@ export function App() {
           </div>
         </div>
       ) : (
-        <div className="fab-dock" data-collapsed={collapsed || undefined} style={{['--dock-solid']: `${Math.round((1 - dockClear) * 100)}%`} as CSSProperties}>
+        <div className="fab-dock" data-collapsed={collapsed || undefined}>
           <nav className="dockbar" aria-label="화면" inert={collapsed || undefined}>
             <button type="button" aria-label="홈" aria-pressed={!settingsOpen && scope.type === 'all'} onClick={() => tab({type: 'all'})}><House size={24} strokeWidth={2} /></button>
             <button type="button" aria-label="즐겨찾기" aria-pressed={!settingsOpen && scope.type === 'star'} onClick={() => tab({type: 'star'})}><Star size={24} strokeWidth={2} /></button>

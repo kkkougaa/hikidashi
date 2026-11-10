@@ -512,7 +512,6 @@ dialog:has(.sheet-float) .astryx-bottom-sheet { padding-bottom: 6px !important; 
 .set-row[data-depth] .split-main { padding-inline-start: 22px; }
 .dot[data-sub] { width: 8px; height: 8px; }
 .set-select.wide { max-width: none; width: 100%; }
-.set-range { width: 40%; accent-color: var(--color-accent); }
 /* NSFW 보이기 켜짐 */
 .nav-gear[data-on] { color: var(--color-text-accent); }
 /* 동기화 암호 */
